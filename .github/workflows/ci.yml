@@ -1,0 +1,107 @@
+name: CI
+
+on:
+  push:
+    branches: [dev, prod]
+  pull_request:
+    branches: [dev, prod]
+
+jobs:
+  storage-core:
+    name: storage-core (Rust)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            storage-core/target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('storage-core/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-
+
+      - name: fmt
+        run: cargo fmt --check
+        working-directory: storage-core
+
+      - name: clippy
+        run: cargo clippy -- -D warnings
+        working-directory: storage-core
+
+      - name: test
+        run: cargo test
+        working-directory: storage-core
+
+  backend-api:
+    name: backend-api (Python)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: install
+        run: pip install -r requirements-dev.txt
+        working-directory: backend-api
+
+      - name: lint
+        run: ruff check .
+        working-directory: backend-api
+
+      - name: test
+        run: pytest
+        working-directory: backend-api
+
+  frontend:
+    name: frontend (Node/React)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      # Switch to npm ci + cache once package-lock.json is committed.
+      - name: install
+        run: npm install
+        working-directory: frontend
+
+      - name: lint
+        run: npm run lint
+        working-directory: frontend
+
+      - name: build
+        run: npm run build
+        working-directory: frontend
+
+  auditor:
+    name: auditor (TypeScript Lambda)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      # Switch to npm ci + cache once package-lock.json is committed.
+      - name: install
+        run: npm install
+        working-directory: auditor
+
+      - name: build
+        run: npm run build
+        working-directory: auditor
+
+      - name: test
+        run: npm test
+        working-directory: auditor

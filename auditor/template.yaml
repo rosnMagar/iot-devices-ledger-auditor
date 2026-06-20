@@ -1,0 +1,28 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: IoT Devices Ledger — Auditor Lambda (stub)
+
+Parameters:
+  StorageCoreUrl:
+    Type: String
+    Description: Public URL of the storage-core endpoint (e.g. http://<EC2-IP>:8080)
+
+Globals:
+  Function:
+    Timeout: 30
+    Runtime: nodejs20.x
+
+Resources:
+  AuditorFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: dist/
+      Handler: handler.handler
+      Environment:
+        Variables:
+          STORAGE_CORE_URL: !Ref StorageCoreUrl
+
+Outputs:
+  AuditorFunctionArn:
+    Description: Auditor Lambda ARN
+    Value: !GetAtt AuditorFunction.Arn
