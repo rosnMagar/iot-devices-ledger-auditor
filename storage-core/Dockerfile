@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1
-FROM rust:1-slim AS builder
+FROM --platform=$BUILDPLATFORM rust:1-slim AS builder
 WORKDIR /app
 COPY Cargo.toml Cargo.lock* ./
 COPY src ./src
