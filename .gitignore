@@ -11,6 +11,7 @@ backend-api/data/*.db
 # Node
 node_modules/
 frontend/dist/
+frontend/tsconfig.tsbuildinfo
 auditor/dist/
 auditor/.aws-sam/
 
@@ -18,5 +19,6 @@ auditor/.aws-sam/
 .env
 *.env.local
 
-# OS
+# OS / tooling
 .DS_Store
+.Rhistory
