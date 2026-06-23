@@ -1,3 +1,5 @@
+mod block;
+
 use axum::{routing::get, Json, Router};
 use serde_json::{json, Value};
 use std::net::SocketAddr;
