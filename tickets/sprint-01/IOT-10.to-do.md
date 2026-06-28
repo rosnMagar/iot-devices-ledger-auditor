@@ -1,4 +1,4 @@
-# IOT-10: `block.rs` — `compute_hash` + `genesis`
+# IOT-10: `block.hpp` — `compute_hash` + `genesis`
 
 **Sprint:** sprint-01
 **Story points:** 3
@@ -9,11 +9,11 @@
 As a developer, I want deterministic block hashing so that the chain is tamper-evident.
 
 ## Acceptance criteria
-- [ ] `compute_hash` = `SHA256(index.to_le_bytes() || timestamp.to_rfc3339() || serde_json::to_string(event) || prev_hash)`, hex-encoded
-- [ ] `Block::genesis()` → index 0, `prev_hash = "0"*64`, hash computed
-- [ ] `Block::new(index, event, prev_hash)` computes and stores `hash`
+- [ ] `compute_hash(index, timestamp, event, prev_hash)` = `SHA256(index as 8 LE bytes || timestamp || json(event).dump() || prev_hash)`, hex-encoded
+- [ ] `genesis()` → index 0, `prev_hash = "0"*64`, hash computed
+- [ ] `make_block(index, event, prev_hash)` computes and stores `hash`
 - [ ] Same inputs always produce the same hash
 
 ## Implementation notes
-- Use `sha2::Sha256` + `hex::encode`.
+- Use OpenSSL `libcrypto` (`SHA256` / EVP) + a hex encode; link `-lcrypto` in CMake.
 - Hash field ordering must be stable — document it; see `docs/decisions/0001-hash-chain-no-pow.md`.

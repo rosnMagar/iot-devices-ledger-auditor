@@ -12,12 +12,12 @@ Work proceeds phase-by-phase (and within Phase 1, weekend-by-weekend), each requ
 - [ ] `http://<EC2-IP>` shows frontend stub displaying blocks/users via backend-api → storage-core
 - [ ] Lambda exists in AWS, manually invokable, log shows successful call to `http://<EC2-IP>:8080/verify`
 
-## Phase 1 — Rust storage-core (~3-4 weekends, centerpiece)
+## Phase 1 — C++ storage-core (~3-4 weekends, centerpiece)
 
-- [ ] Weekend 1 — Core data model (`block.rs`, `chain.rs`, hashing, unit tests)
+- [ ] Weekend 1 — Core data model (`block.hpp`, `chain.hpp`, SHA-256 hashing, unit tests)
 - [ ] Weekend 2 — Persistence (NDJSON append/load, reload-on-startup, tamper-detection test)
-- [ ] Weekend 3 — REST API (axum router, `Arc<RwLock<Chain>>`, `error.rs`, integration tests)
-- [ ] Weekend 4 — Ring buffer + WebSocket (`mpsc`/`oneshot`/`broadcast`, `writer_task`, `/ws/blocks`, capstone integration test)
+- [ ] Weekend 3 — REST API (HTTP router, `Chain` behind a `std::shared_mutex`, error handling, integration tests)
+- [ ] Weekend 4 — Ring buffer + WebSocket (producer/consumer queue + writer thread, `/ws/blocks`, capstone integration test)
 
 ## Phase 1.5 — IoT Firmware PoC (~1 weekend)
 

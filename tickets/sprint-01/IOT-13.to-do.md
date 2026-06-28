@@ -12,8 +12,8 @@ As a developer, I want unit tests on the data model so that the hashing/verifica
 - [ ] Test: identical inputs → identical hash (determinism)
 - [ ] Test: mutating any block field changes its hash (tamper detection)
 - [ ] Test: a 3-block chain verifies; mutating a middle block fails `verify()` at the right index
-- [ ] `cargo test` green
+- [ ] `ctest` green
 
 ## Implementation notes
-- Pure unit tests, no I/O yet (persistence tests come in sprint-02).
+- Pure unit tests with `doctest` (vendored), wired into CMake via `ctest`; no I/O yet (persistence tests come in sprint-02).
 - Cover the genesis edge case.

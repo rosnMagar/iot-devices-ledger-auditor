@@ -4,45 +4,33 @@ This doc covers what you need installed to work on each service locally.
 
 ---
 
-## Rust (for storage-core)
+## C++ (for storage-core)
 
-Install via `rustup` — the official Rust toolchain installer.
-
-```bash
-curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
-```
-
-When prompted, choose option 1 ("Proceed with standard installation").
-
-What gets installed: `rustc` (compiler), `cargo` (build tool + package manager), `rustfmt` (formatter), `clippy` (linter).
-
-After the installer finishes, reload your shell:
+storage-core builds with a C++20 compiler, CMake, and Make. On Debian/Ubuntu:
 
 ```bash
-source "$HOME/.cargo/env"
+sudo apt install build-essential cmake libssl-dev
 ```
+
+What this provides: `g++` + `make` (`build-essential`), `cmake` (drives the build), and OpenSSL's `libcrypto`/headers (`libssl-dev`, used for SHA-256).
 
 Verify:
 
 ```bash
-rustc --version   # rustc 1.8x.x (...)
-cargo --version   # cargo 1.8x.x (...)
+g++ --version     # g++ (...) 13.x
+cmake --version   # cmake 3.2x.x
 ```
 
-To update Rust later:
-
-```bash
-rustup update
-```
+Header-only dependencies (`nlohmann/json`, `doctest`) are **vendored** under `storage-core/third_party/` — nothing to install.
 
 ### Building storage-core locally
 
 ```bash
 cd storage-core
-cargo build           # debug build
-cargo build --release # release build (used by Docker)
-cargo test            # run all tests
-cargo run             # run locally on 0.0.0.0:8080
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug
+cmake --build build       # compile
+ctest --test-dir build    # run all tests
+./build/storage-core      # run locally on 0.0.0.0:8080
 ```
 
 ---
