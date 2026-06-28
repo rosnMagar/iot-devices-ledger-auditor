@@ -1,0 +1,24 @@
+# Rust
+storage-core/target/
+storage-core/data/*.log
+
+# Python
+backend-api/__pycache__/
+backend-api/.venv/
+backend-api/data/*.db
+*.pyc
+
+# Node
+node_modules/
+frontend/dist/
+frontend/tsconfig.tsbuildinfo
+auditor/dist/
+auditor/.aws-sam/
+
+# Env
+.env
+*.env.local
+
+# OS / tooling
+.DS_Store
+.Rhistory

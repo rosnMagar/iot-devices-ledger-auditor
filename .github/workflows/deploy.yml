@@ -1,0 +1,122 @@
+name: Deploy
+
+on:
+  push:
+    branches: [dev, prod]
+
+jobs:
+  build-push:
+    name: Build & push images (${{ github.ref_name }})
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Lowercase image owner
+        id: owner
+        run: echo "value=$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')" >> $GITHUB_OUTPUT
+
+      - name: Set frontend API URL
+        run: |
+          if [ "${{ github.ref_name }}" = "prod" ]; then
+            echo "FRONTEND_API_URL=http://${{ secrets.EC2_HOST }}:8000" >> $GITHUB_ENV
+          else
+            echo "FRONTEND_API_URL=http://localhost:8000" >> $GITHUB_ENV
+          fi
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build & push storage-core
+        uses: docker/build-push-action@v5
+        with:
+          context: ./storage-core
+          platforms: linux/arm64
+          push: true
+          tags: ghcr.io/${{ steps.owner.outputs.value }}/storage-core:${{ github.ref_name }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build & push backend-api
+        uses: docker/build-push-action@v5
+        with:
+          context: ./backend-api
+          platforms: linux/arm64
+          push: true
+          tags: ghcr.io/${{ steps.owner.outputs.value }}/backend-api:${{ github.ref_name }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build & push frontend
+        uses: docker/build-push-action@v5
+        with:
+          context: ./frontend
+          platforms: linux/arm64
+          push: true
+          tags: ghcr.io/${{ steps.owner.outputs.value }}/frontend:${{ github.ref_name }}
+          build-args: VITE_API_BASE_URL=${{ env.FRONTEND_API_URL }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  deploy-ec2:
+    name: Deploy to EC2
+    needs: build-push
+    if: github.ref_name == 'prod'
+    runs-on: ubuntu-latest
+    steps:
+      - name: SSH deploy
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          script: |
+            cd /opt/audit-ledger
+            git pull origin prod
+            docker compose pull
+            docker compose up -d
+
+  deploy-lambda:
+    name: Deploy auditor Lambda
+    needs: build-push
+    if: github.ref_name == 'prod'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - run: npm install
+        working-directory: auditor
+
+      - run: npm run build
+        working-directory: auditor
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ vars.AWS_REGION || 'us-east-1' }}
+
+      - run: pip install aws-sam-cli
+
+      - name: SAM build & deploy
+        working-directory: auditor
+        run: |
+          sam build
+          sam deploy \
+            --no-confirm-changeset \
+            --no-fail-on-empty-changeset \
+            --parameter-overrides "StorageCoreUrl=http://${{ secrets.EC2_HOST }}:8080"
