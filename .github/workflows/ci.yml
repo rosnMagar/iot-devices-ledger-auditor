@@ -8,34 +8,24 @@ on:
 
 jobs:
   storage-core:
-    name: storage-core (Rust)
+    name: storage-core (C++)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: rustfmt, clippy
+      - name: install build deps
+        run: sudo apt-get update && sudo apt-get install -y cmake libssl-dev
 
-      - uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            storage-core/target
-          key: ${{ runner.os }}-cargo-${{ hashFiles('storage-core/Cargo.lock') }}
-          restore-keys: ${{ runner.os }}-cargo-
-
-      - name: fmt
-        run: cargo fmt --check
+      - name: configure
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
         working-directory: storage-core
 
-      - name: clippy
-        run: cargo clippy -- -D warnings
+      - name: build
+        run: cmake --build build
         working-directory: storage-core
 
       - name: test
-        run: cargo test
+        run: ctest --test-dir build --output-on-failure --no-tests=ignore
         working-directory: storage-core
 
   backend-api:
