@@ -2,7 +2,7 @@
 
 **Sprint:** sprint-01
 **Story points:** 3
-**Status:** In Progress
+**Status:** Review
 **Depends on:** IOT-9
 
 ## Story
