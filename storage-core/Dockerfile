@@ -1,13 +1,17 @@
 # syntax=docker/dockerfile:1
-FROM --platform=$BUILDPLATFORM rust:1-slim AS builder
+FROM --platform=$BUILDPLATFORM gcc:13 AS builder
+RUN apt-get update && apt-get install -y --no-install-recommends cmake \
+    && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
-COPY Cargo.toml Cargo.lock* ./
+COPY CMakeLists.txt ./
 COPY src ./src
-RUN cargo build --release
+COPY include ./include
+COPY third_party ./third_party
+RUN cmake -S . -B build -DCMAKE_BUILD_TYPE=Release && cmake --build build -j
 
 FROM debian:bookworm-slim
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates \
     && rm -rf /var/lib/apt/lists/*
-COPY --from=builder /app/target/release/storage-core /usr/local/bin/storage-core
+COPY --from=builder /app/build/storage-core /usr/local/bin/storage-core
 EXPOSE 8080
 CMD ["storage-core"]

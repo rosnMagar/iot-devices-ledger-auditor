@@ -1,4 +1,4 @@
-# IOT-9: `block.rs` — `EventPayload` + `Block` structs + serde
+# IOT-9: `block.hpp` — `EventPayload` + `Block` structs + JSON
 
 **Sprint:** sprint-01
 **Story points:** 2
@@ -11,10 +11,10 @@ As a developer, I want the core ledger data types so that events and blocks have
 ## Acceptance criteria
 - [x] `EventPayload { event_type, location_id, actor, description, metadata }` defined
 - [x] `Block { index, timestamp, event, prev_hash, hash }` defined
-- [x] Both derive `Debug, Clone, Serialize, Deserialize`; `metadata` is `serde_json::Value`
-- [x] `timestamp` is `chrono::DateTime<Utc>`; `cargo build` clean
+- [x] Both serialize via `NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE`; `metadata` is `nlohmann::json`
+- [x] `timestamp` is `std::string` (RFC3339); `cmake --build` clean
 
 ## Implementation notes
 - Replaces the Phase 0 stub in `storage-core/`.
 - See `docs/storage-core/overview.md` for the exact field spec.
-- `///` doc comments encouraged this phase (learning + `cargo doc`).
+- `nlohmann/json` vendored at `storage-core/third_party/nlohmann/json.hpp`.

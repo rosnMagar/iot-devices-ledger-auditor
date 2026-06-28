@@ -6,7 +6,7 @@ This is a living document — updated at the end of every phase to reflect what'
 
 | Component | Stack | Responsibility |
 |---|---|---|
-| `storage-core` | Rust, axum | Hash-chained append-only ledger; REST + WebSocket API |
+| `storage-core` | C++ (CMake) | Hash-chained append-only ledger; REST + WebSocket API |
 | `backend-api` | Python, FastAPI | Users/locations/settings/devices DB; proxies storage-core; relays live events to frontend |
 | `frontend` | React, Vite, TS | Dashboard with live event feed |
 | `auditor` | TypeScript, AWS Lambda | Event-driven anomaly auditor; pulls recent blocks, calls an LLM, drafts incident reports |
@@ -25,7 +25,7 @@ flowchart LR
     subgraph EC2["EC2 t4g.micro (docker-compose)"]
         FE["frontend\n(nginx, :80)"]
         BE["backend-api\n(FastAPI, :8000)"]
-        SC["storage-core\n(axum, :8080)"]
+        SC["storage-core\n(C++, :8080)"]
         FE -->|"GET /blocks, /users"| BE
         BE -->|"GET /blocks (httpx)"| SC
     end
