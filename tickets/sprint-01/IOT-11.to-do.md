@@ -1,4 +1,4 @@
-# IOT-11: `chain.rs` — `new` / `append` / `latest`
+# IOT-11: `chain.hpp/.cpp` — `Chain` with `append` / `latest` / `size`
 
 **Sprint:** sprint-01
 **Story points:** 3
@@ -9,11 +9,11 @@
 As a developer, I want an in-memory chain so that events can be appended as linked blocks.
 
 ## Acceptance criteria
-- [ ] `Chain` wraps `Vec<Block>`; `Chain::new()` seeds a genesis block
-- [ ] `append(event) -> &Block` builds the next block from `latest().hash` and pushes it
-- [ ] `latest() -> &Block` returns the tail; `len()` returns chain length
+- [ ] `Chain` wraps `std::vector<Block>`; the constructor seeds a genesis block
+- [ ] `append(event) -> const Block&` builds the next block from `latest().hash` and pushes it
+- [ ] `latest() -> const Block&` returns the tail; `size()` returns chain length
 - [ ] New block's `index` = previous + 1, `prev_hash` = previous `hash`
 
 ## Implementation notes
 - `append` computes index/prev_hash internally — callers pass only the `EventPayload`.
-- Keep `Chain` lock-free here; concurrency (mpsc/writer task) comes in sprint-03.
+- Keep `Chain` single-threaded here; concurrency (writer thread/queue) comes in sprint-03.

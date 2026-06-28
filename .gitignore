@@ -1,6 +1,9 @@
-# Rust
-storage-core/target/
+# C++
+storage-core/build/
 storage-core/data/*.log
+
+# stale Rust build artifacts (storage-core migrated to C++)
+storage-core/target/
 
 # Python
 backend-api/__pycache__/
