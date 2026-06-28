@@ -2,17 +2,17 @@
 
 **Sprint:** sprint-01
 **Story points:** 3
-**Status:** To Do
+**Status:** In Progress
 **Depends on:** IOT-9
 
 ## Story
 As a developer, I want deterministic block hashing so that the chain is tamper-evident.
 
 ## Acceptance criteria
-- [ ] `compute_hash(index, timestamp, event, prev_hash)` = `SHA256(index as 8 LE bytes || timestamp || json(event).dump() || prev_hash)`, hex-encoded
-- [ ] `genesis()` → index 0, `prev_hash = "0"*64`, hash computed
-- [ ] `make_block(index, event, prev_hash)` computes and stores `hash`
-- [ ] Same inputs always produce the same hash
+- [x] `compute_hash(index, timestamp, event, prev_hash)` = `SHA256(index as 8 LE bytes || timestamp || json(event).dump() || prev_hash)`, hex-encoded
+- [x] `genesis()` → index 0, `prev_hash = "0"*64`, hash computed
+- [x] `make_block(index, event, prev_hash)` computes and stores `hash`
+- [x] Same inputs always produce the same hash
 
 ## Implementation notes
 - Use OpenSSL `libcrypto` (`SHA256` / EVP) + a hex encode; link `-lcrypto` in CMake.
