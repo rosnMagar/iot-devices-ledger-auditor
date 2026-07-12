@@ -10,3 +10,11 @@ find_package(OpenSSL REQUIRED)
 add_executable(storage-core src/main.cpp src/chain.cpp)
 target_include_directories(storage-core PRIVATE include third_party)
 target_link_libraries(storage-core PRIVATE OpenSSL::Crypto)
+
+enable_testing()
+
+add_executable(test-chain tests/test_chain.cpp src/chain.cpp)
+target_include_directories(test-chain PRIVATE include third_party)
+target_link_libraries(test-chain PRIVATE OpenSSL::Crypto)
+
+add_test(NAME chain-unit-tests COMMAND test-chain)
