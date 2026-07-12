@@ -27,4 +27,33 @@ std::size_t Chain::size() const {
     return blocks_.size();
 }
 
+VerifyResult verify_chain(const std::vector<Block>& blocks) {
+    static const std::string kGenesisPrevHash(64, '0');
+
+    VerifyResult result{true, blocks.size(), 0, std::nullopt};
+
+    for (std::size_t i = 0; i < blocks.size(); ++i) {
+        const Block& b = blocks[i];
+
+        // Expected prev_hash: 64 zeros for genesis, otherwise the prior hash.
+        const std::string& expected_prev = (i == 0) ? kGenesisPrevHash : blocks[i - 1].hash;
+
+        const std::string recomputed = compute_hash(b.index, b.timestamp, b.event, b.prev_hash);
+
+        ++result.checked_blocks;
+
+        if (b.prev_hash != expected_prev || recomputed != b.hash) {
+            result.valid = false;
+            result.first_invalid_index = i;
+            break;
+        }
+    }
+
+    return result;
+}
+
+VerifyResult Chain::verify() const {
+    return verify_chain(blocks_);
+}
+
 }  // namespace ledger
