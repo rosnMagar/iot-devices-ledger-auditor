@@ -2,16 +2,16 @@
 
 **Sprint:** sprint-01
 **Story points:** 1
-**Status:** To Do
+**Status:** Review
 **Depends on:** IOT-2
 
 ## Story
 As an operator, I want Docker and the repo on the EC2 host so that `docker compose` can run the stack.
 
 ## Acceptance criteria
-- [ ] Docker Engine + Compose plugin installed; `docker` works without sudo
-- [ ] Repo cloned to `/opt/audit-ledger`, `prod` branch checked out
-- [ ] `.env` created from `.env.example` with `TAG=prod` and `VITE_API_BASE_URL=http://<EC2-IP>:8000`
+- [x] Docker Engine + Compose plugin installed; `docker` works without sudo
+- [x] Repo cloned to `/opt/audit-ledger`, `prod` branch checked out
+- [x] `.env` created from `.env.example` with `TAG=prod` and `VITE_API_BASE_URL=http://52.15.229.12:8000`
 
 ## Implementation notes
 - Follow `docs/deployment.md` §2–4.
