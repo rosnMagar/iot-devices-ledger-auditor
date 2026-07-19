@@ -4,6 +4,19 @@ One-time manual setup before the first `prod` deploy. Do this before setting Git
 
 ---
 
+## Live environment
+
+| Item | Value |
+|---|---|
+| Region | `us-east-2` (Ohio) |
+| Instance | `t4g.micro`, Ubuntu 24.04 ARM64 |
+| Public IP | `52.15.229.12` |
+| SSH | `ssh -i <key>.pem ubuntu@52.15.229.12` |
+
+> Ports open: 22 (my IP), 80, 8000, 8080.
+
+---
+
 ## 1. Launch EC2 instance
 
 In the AWS console (or `aws ec2 run-instances`):
