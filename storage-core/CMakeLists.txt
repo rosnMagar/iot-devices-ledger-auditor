@@ -7,7 +7,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 find_package(OpenSSL REQUIRED)
 
-add_executable(storage-core src/main.cpp src/chain.cpp)
+add_executable(storage-core src/main.cpp src/chain.cpp src/storage.cpp)
 target_include_directories(storage-core PRIVATE include third_party)
 target_link_libraries(storage-core PRIVATE OpenSSL::Crypto)
 
