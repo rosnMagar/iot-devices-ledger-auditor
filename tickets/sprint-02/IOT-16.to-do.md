@@ -1,4 +1,4 @@
-# IOT-16: Startup reload-or-genesis in `main.rs`
+# IOT-16: Startup reload-or-genesis in `main.cpp`
 
 **Sprint:** sprint-02
 **Story points:** 2
@@ -9,11 +9,12 @@
 As an operator, I want the server to load existing ledger state on boot so that restarts are seamless.
 
 ## Acceptance criteria
-- [ ] On startup, `main.rs` calls `load_chain(LEDGER_PATH)`
-- [ ] Existing file → chain restored; fresh file → genesis seeded and written
+- [ ] On startup, `main.cpp` calls `load_chain(LEDGER_PATH)`
+- [ ] Existing file → chain restored; fresh/empty file → genesis seeded **and written to disk**
 - [ ] Loaded chain length is logged at startup
-- [ ] `cargo run` twice in a row preserves blocks
+- [ ] Running the binary twice in a row preserves blocks
 
 ## Implementation notes
-- Keep `main.rs` thin: config → load → build `AppState` → serve.
-- Genesis must be persisted so the first read after a fresh boot is consistent.
+- Keep `main.cpp` thin: config → load → build shared state (`AppState`) → serve.
+- Genesis must be persisted (`append_block`) on a fresh boot so the first read is consistent with disk.
+- Replaces the current print-and-exit stub `main()` entirely.
