@@ -10,10 +10,11 @@ As an auditor, I want a verify endpoint and HTTP-level tests so that chain integ
 
 ## Acceptance criteria
 - [ ] `GET /verify` returns `{ valid, chain_length, checked_blocks, first_invalid_index, verified_at }`
-- [ ] Integration tests via `tower::ServiceExt::oneshot` cover `/health`, `POST /events`, `GET /blocks`, `GET /verify`
+- [ ] Integration tests (httplib::Client against a locally-bound test server) cover `/health`, `POST /events`, `GET /blocks`, `GET /verify`
 - [ ] Test: POST an event → it appears in `GET /blocks` and chain still verifies
-- [ ] `cargo test` green
+- [ ] `ctest` green
 
 ## Implementation notes
-- Build the app in tests with a `tempfile` ledger path.
-- This closes out the "simple REST" milestone — deployable even if sprint-03 slips.
+- Build the app in tests with a temp ledger path; bind to an ephemeral port on `127.0.0.1` and hit it with `httplib::Client`.
+- `verified_at = now_rfc3339()`; reuse `VerifyResult` from IOT-12 for the body shape.
+- Closes out the "simple REST" milestone — deployable even if sprint-03 slips.
