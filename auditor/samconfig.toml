@@ -3,6 +3,6 @@ version = 0.1
 [default.deploy.parameters]
 stack_name = "iot-ledger-auditor"
 s3_prefix = "iot-ledger-auditor"
-region = "us-east-1"
+region = "us-east-2"
 capabilities = "CAPABILITY_IAM"
 resolve_s3 = true
