@@ -10,6 +10,16 @@ Chain::Chain() {
     blocks_.push_back(genesis());
 }
 
+Chain::Chain(load_tag, std::vector<Block> blocks) : blocks_(std::move(blocks)) {}
+
+Chain Chain::load(std::vector<Block> blocks) {
+    return Chain(load_tag{}, std::move(blocks));
+}
+
+const std::vector<Block>& Chain::blocks() const {
+    return blocks_;
+}
+
 const Block& Chain::append(EventPayload event) {
     // Copy what we need from the tail before push_back may reallocate blocks_.
     const std::uint64_t next_index = latest().index + 1;
