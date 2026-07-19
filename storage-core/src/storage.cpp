@@ -31,4 +31,31 @@ void append_block(std::ofstream& os, const Block& block) {
     }
 }
 
+Chain load_chain(const std::filesystem::path& path) {
+    std::ifstream in(path);
+    if (!in) {
+        // Missing file → fresh chain seeded with genesis.
+        return Chain();
+    }
+
+    std::vector<Block> blocks;
+    std::string line;
+    std::size_t lineno = 0;
+    while (std::getline(in, line)) {
+        ++lineno;
+        try {
+            blocks.push_back(nlohmann::json::parse(line).get<Block>());
+        } catch (const std::exception& e) {
+            throw StorageError("malformed ledger line " + std::to_string(lineno) +
+                               ": " + e.what());
+        }
+    }
+
+    if (blocks.empty()) {
+        // Empty file → fresh chain seeded with genesis.
+        return Chain();
+    }
+    return Chain::load(std::move(blocks));
+}
+
 }  // namespace ledger

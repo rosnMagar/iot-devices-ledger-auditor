@@ -5,6 +5,7 @@
 #include <string>
 
 #include <block.hpp>
+#include <chain.hpp>
 
 namespace ledger {
 
@@ -12,6 +13,11 @@ namespace ledger {
 struct StorageError : std::runtime_error {
     using std::runtime_error::runtime_error;
 };
+
+/// Load a chain from the NDJSON ledger log. Empty/missing file → a fresh Chain
+/// seeded with genesis. Blocks are loaded verbatim (no recompute). A malformed
+/// line throws StorageError naming the line number — never silently skipped.
+Chain load_chain(const std::filesystem::path& path);
 
 /// Open (creating the parent directory + file if missing) the ledger log for
 /// appending. Throws StorageError on failure.
