@@ -11,10 +11,16 @@ add_executable(storage-core src/main.cpp src/chain.cpp)
 target_include_directories(storage-core PRIVATE include third_party)
 target_link_libraries(storage-core PRIVATE OpenSSL::Crypto)
 
-enable_testing()
+# Tests are ON for local dev and CI, but the production Docker image builds with
+# -DSTORAGE_CORE_BUILD_TESTS=OFF so it never needs the tests/ sources.
+option(STORAGE_CORE_BUILD_TESTS "Build storage-core unit tests" ON)
 
-add_executable(test-chain tests/test_chain.cpp src/chain.cpp)
-target_include_directories(test-chain PRIVATE include third_party)
-target_link_libraries(test-chain PRIVATE OpenSSL::Crypto)
+if(STORAGE_CORE_BUILD_TESTS)
+    enable_testing()
 
-add_test(NAME chain-unit-tests COMMAND test-chain)
+    add_executable(test-chain tests/test_chain.cpp src/chain.cpp)
+    target_include_directories(test-chain PRIVATE include third_party)
+    target_link_libraries(test-chain PRIVATE OpenSSL::Crypto)
+
+    add_test(NAME chain-unit-tests COMMAND test-chain)
+endif()

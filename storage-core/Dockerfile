@@ -7,7 +7,7 @@ COPY CMakeLists.txt ./
 COPY src ./src
 COPY include ./include
 COPY third_party ./third_party
-RUN cmake -S . -B build -DCMAKE_BUILD_TYPE=Release && cmake --build build -j
+RUN cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DSTORAGE_CORE_BUILD_TESTS=OFF && cmake --build build -j
 
 FROM debian:bookworm-slim
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates \
