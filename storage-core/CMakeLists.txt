@@ -23,4 +23,10 @@ if(STORAGE_CORE_BUILD_TESTS)
     target_link_libraries(test-chain PRIVATE OpenSSL::Crypto)
 
     add_test(NAME chain-unit-tests COMMAND test-chain)
+
+    add_executable(test-storage tests/test_storage.cpp src/storage.cpp src/chain.cpp)
+    target_include_directories(test-storage PRIVATE include third_party)
+    target_link_libraries(test-storage PRIVATE OpenSSL::Crypto)
+
+    add_test(NAME storage-unit-tests COMMAND test-storage)
 endif()
