@@ -27,6 +27,12 @@ jobs:
             echo "FRONTEND_API_URL=http://localhost:8000" >> $GITHUB_ENV
           fi
 
+      # Required to cross-build linux/arm64 images on GitHub's x86 runners.
+      # Without it buildx silently produces amd64 images, which fail on the
+      # t4g (Graviton) instance with "exec format error".
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
@@ -108,7 +114,7 @@ jobs:
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ vars.AWS_REGION || 'us-east-1' }}
+          aws-region: ${{ vars.AWS_REGION || 'us-east-2' }}
 
       - run: pip install aws-sam-cli
 
