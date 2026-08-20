@@ -7,9 +7,12 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 find_package(OpenSSL REQUIRED)
 
-add_executable(storage-core src/main.cpp src/chain.cpp src/storage.cpp)
+# cpp-httplib runs each connection on its own thread.
+find_package(Threads REQUIRED)
+
+add_executable(storage-core src/main.cpp src/chain.cpp src/storage.cpp src/server.cpp)
 target_include_directories(storage-core PRIVATE include third_party)
-target_link_libraries(storage-core PRIVATE OpenSSL::Crypto)
+target_link_libraries(storage-core PRIVATE OpenSSL::Crypto Threads::Threads)
 
 # Tests are ON for local dev and CI, but the production Docker image builds with
 # -DSTORAGE_CORE_BUILD_TESTS=OFF so it never needs the tests/ sources.

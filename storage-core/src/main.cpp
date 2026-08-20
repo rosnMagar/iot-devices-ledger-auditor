@@ -8,6 +8,7 @@
 #include "chain.hpp"
 #include "config.hpp"
 #include "log.hpp"
+#include "server.hpp"
 #include "storage.hpp"
 
 namespace {
@@ -28,22 +29,22 @@ int run() {
     const auto size = std::filesystem::file_size(config.ledger_path, ec);
     const bool fresh = static_cast<bool>(ec) || size == 0;
 
-    // Reload existing ledger state, or seed genesis on a fresh boot.
-    ledger::Chain chain = ledger::load_chain(config.ledger_path);
+    // Reload existing ledger state (or seed genesis on a fresh boot) and keep the
+    // append handle open for as long as the server runs.
+    ledger::AppState state{ledger::load_chain(config.ledger_path),
+                           {},
+                           ledger::open_append(config.ledger_path)};
 
     if (fresh) {
         // Persist the genesis that load_chain seeded in-memory, so the first
         // read after boot is consistent with disk.
-        std::ofstream log = ledger::open_append(config.ledger_path);
-        ledger::append_block(log, chain.latest());
+        ledger::append_block(state.log, state.chain.latest());
     }
 
-    ledger::log::info("loaded chain length " + std::to_string(chain.size()) +
+    ledger::log::info("loaded chain length " + std::to_string(state.chain.size()) +
                       " from " + config.ledger_path);
 
-    // HTTP server (bind + serve on config.bind_*) lands in IOT-20; until then,
-    // exit cleanly after loading state.
-    return 0;
+    return ledger::serve(state, config) ? 0 : 1;
 }
 
 }  // namespace
