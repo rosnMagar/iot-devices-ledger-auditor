@@ -92,6 +92,22 @@ jobs:
             docker compose pull
             docker compose up -d
 
+            # `up -d` exits 0 as soon as the container is created, so a container
+            # that crash-loops still looks like a successful deploy. Poll /health
+            # and fail the job if it never answers.
+            for i in $(seq 1 30); do
+              if curl -fsS localhost:8080/health > /dev/null; then
+                echo "storage-core healthy after $((i * 2))s"
+                exit 0
+              fi
+              sleep 2
+            done
+
+            echo "storage-core did not become healthy within 60s" >&2
+            docker compose ps >&2
+            docker compose logs --tail=50 storage-core >&2
+            exit 1
+
   deploy-lambda:
     name: Deploy auditor Lambda
     needs: build-push

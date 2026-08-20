@@ -1,5 +1,8 @@
 # syntax=docker/dockerfile:1
-FROM --platform=$BUILDPLATFORM gcc:13 AS builder
+# NOT --platform=$BUILDPLATFORM: this stage compiles a native binary, so it must
+# run on the *target* platform. Pinning it to the build platform produced an
+# x86 binary inside an arm64 image — "exec format error" on the Graviton box.
+FROM gcc:13 AS builder
 RUN apt-get update && apt-get install -y --no-install-recommends cmake \
     && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
