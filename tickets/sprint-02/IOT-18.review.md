@@ -12,7 +12,7 @@ As an API consumer, I want consistent error responses so that failures are predi
 - [x] `ApiError` type carrying an HTTP status code + a public message (e.g. `InvalidRange`, `Internal`)
 - [x] A translation helper maps `ApiError` → status + body: an invalid range → 400, anything unexpected → 500
 - [x] All errors return `{"error": "..."}` JSON
-- [ ] Handlers can `throw ApiError{...}` and a common wrapper sets status + body — *logic done (`to_error_response`); the httplib exception-handler wiring lands with the server in IOT-20/21*
+- [x] Handlers can `throw ApiError{...}` and a common wrapper sets status + body — *wired in IOT-20 via `set_exception_handler` in `server.cpp`*
 
 ## Implementation notes
 - Implemented in `storage-core/include/error.hpp` (header-only). `ApiError : std::exception { int status; std::string message; }` — constructed directly, e.g. `throw ApiError(400, "from > to")`. Kept MVP-simple: no factory helpers, the status is just the first argument.
