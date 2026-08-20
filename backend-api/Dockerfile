@@ -1,5 +1,7 @@
 # syntax=docker/dockerfile:1
-FROM --platform=$BUILDPLATFORM python:3.12-slim
+# Single-stage image: --platform=$BUILDPLATFORM would pin the whole image to the
+# x86 runner, and its pip wheels with it. Must be the target platform.
+FROM python:3.12-slim
 WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
