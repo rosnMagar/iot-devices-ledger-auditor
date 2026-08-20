@@ -115,7 +115,7 @@ In the repo → Settings → Secrets and variables → Actions:
 
 | Name | Value |
 |---|---|
-| `AWS_REGION` | e.g. `us-east-1` |
+| `AWS_REGION` | `us-east-2` (the region the EC2 box lives in) |
 
 ---
 
@@ -158,7 +158,7 @@ Lambda:
 ```bash
 aws lambda invoke \
   --function-name iot-ledger-auditor-AuditorFunction \
-  --region us-east-1 \
+  --region us-east-2 \
   /tmp/out.json && cat /tmp/out.json
 # should show the /verify response from storage-core
 ```
