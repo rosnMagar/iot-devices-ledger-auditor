@@ -53,6 +53,30 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+      # Building an image only proves it compiles — nothing here ever ran the
+      # binary. Two deploy-blocking bugs shipped green through this job that
+      # way: an x86 binary inside an arm64 image (IOT-42), then a libstdc++
+      # version mismatch (IOT-43). Both would have failed on the first request
+      # here. Runs the real arm64 image under the QEMU set up above.
+      - name: Smoke test storage-core image
+        run: |
+          image=ghcr.io/${{ steps.owner.outputs.value }}/storage-core:${{ github.ref_name }}
+          docker run -d --name smoke --platform linux/arm64 -p 18080:8080 "$image"
+
+          for i in $(seq 1 30); do
+            if curl -fsS localhost:18080/health > /dev/null; then
+              echo "image starts and serves /health after $((i * 2))s"
+              docker rm -f smoke > /dev/null
+              exit 0
+            fi
+            sleep 2
+          done
+
+          echo "storage-core image did not serve /health within 60s" >&2
+          docker logs smoke >&2
+          docker rm -f smoke > /dev/null
+          exit 1
+
       - name: Build & push backend-api
         uses: docker/build-push-action@v5
         with:

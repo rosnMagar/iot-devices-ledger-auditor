@@ -10,7 +10,15 @@ COPY CMakeLists.txt ./
 COPY src ./src
 COPY include ./include
 COPY third_party ./third_party
-RUN cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DSTORAGE_CORE_BUILD_TESTS=OFF && cmake --build build -j
+# -static-libstdc++/-static-libgcc: gcc:13 links against GCC 13's libstdc++, but
+# the bookworm-slim runtime below only ships GCC 12's (GLIBCXX_3.4.30). Without
+# this the binary builds fine and dies on startup with "GLIBCXX_3.4.32 not
+# found". Baking the C++ runtime in costs ~2MB and decouples the two stages, so
+# bumping either base image can't reintroduce the mismatch. Safe here because
+# nothing else in the image is C++ — only C libraries are dynamically linked.
+RUN cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DSTORAGE_CORE_BUILD_TESTS=OFF \
+      -DCMAKE_EXE_LINKER_FLAGS="-static-libstdc++ -static-libgcc" \
+    && cmake --build build -j
 
 FROM debian:bookworm-slim
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates \
