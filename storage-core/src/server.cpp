@@ -1,13 +1,19 @@
 #include <server.hpp>
 
 #include <exception>
+#include <mutex>
+#include <shared_mutex>
 #include <string>
+#include <utility>
+#include <vector>
 
 #include <httplib.h>
 #include <nlohmann/json.hpp>
 
+#include <block.hpp>
 #include <error.hpp>
 #include <log.hpp>
+#include <storage.hpp>
 
 namespace ledger {
 
@@ -58,6 +64,58 @@ void install_error_handling(httplib::Server& srv) {
         });
 }
 
+/// Parse a request body into an EventPayload. Every way this can fail — bad
+/// JSON, wrong type, a missing field — is the caller's fault, so it all becomes
+/// a 400. nlohmann's message names the offending line/column or key, which is
+/// useful to a device author and leaks nothing about the server.
+EventPayload parse_event(const std::string& body) {
+    try {
+        return nlohmann::json::parse(body).get<EventPayload>();
+    } catch (const nlohmann::json::exception& e) {
+        throw ApiError{400, "invalid event payload: " + std::string(e.what())};
+    }
+}
+
+/// POST /events — append one event to the ledger.
+///
+/// The whole append is one critical section: the block must land in the chain
+/// and on disk before any other request can observe either, or a concurrent
+/// write would chain onto a block that is not yet persisted.
+void install_events(httplib::Server& srv, AppState& state) {
+    srv.Post("/events", [&state](const httplib::Request& req,
+                                 httplib::Response& res) {
+        EventPayload event = parse_event(req.body);
+        if (event.event_type.empty()) {
+            throw ApiError{400, "event_type must not be empty"};
+        }
+
+        Block created{};
+        {
+            std::unique_lock lock(state.mtx);
+            // append() returns a reference into the chain's vector; copy it out
+            // so the response does not depend on the lock still being held.
+            created = state.chain.append(std::move(event));
+
+            try {
+                append_block(state.log, created);
+            } catch (const StorageError& e) {
+                // The block is in memory but not on disk. Drop it — otherwise
+                // every later block would chain onto something a restart will
+                // never see, and the ledger would fail verification on reload.
+                std::vector<Block> kept = state.chain.blocks();
+                kept.pop_back();
+                state.chain = Chain::load(std::move(kept));
+
+                log::error("failed to persist block: " + std::string(e.what()));
+                throw ApiError{500, "failed to persist event"};
+            }
+        }
+
+        res.status = 201;
+        res.set_content(nlohmann::json(created).dump(), "application/json");
+    });
+}
+
 }  // namespace
 
 bool serve(AppState& state, const Config& config) {
@@ -82,9 +140,10 @@ bool serve(AppState& state, const Config& config) {
                         "application/json");
     });
 
-    // POST /events (IOT-21), GET /blocks (IOT-22) and GET /verify (IOT-23) are
-    // added here; they lock `state.mtx` shared for reads, unique for writes.
-    (void)state;
+    install_events(srv, state);
+
+    // GET /blocks (IOT-22) and GET /verify (IOT-23) are added here; they take a
+    // shared lock on `state.mtx`, where the write above takes a unique one.
 
     log::info("listening on " + config.bind_host + ":" +
               std::to_string(config.bind_port));
