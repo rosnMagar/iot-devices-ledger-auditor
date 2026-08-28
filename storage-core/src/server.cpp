@@ -1,6 +1,10 @@
 #include <server.hpp>
 
+#include <algorithm>
+#include <cstddef>
+#include <cstdint>
 #include <exception>
+#include <limits>
 #include <mutex>
 #include <shared_mutex>
 #include <string>
@@ -11,6 +15,7 @@
 #include <nlohmann/json.hpp>
 
 #include <block.hpp>
+#include <chain.hpp>
 #include <error.hpp>
 #include <log.hpp>
 #include <storage.hpp>
@@ -116,6 +121,80 @@ void install_events(httplib::Server& srv, AppState& state) {
     });
 }
 
+/// Read one range query param as a block index, falling back when it is absent.
+///
+/// Everything a caller can get wrong here is a 400. The digits are checked by
+/// hand first because stoull is too forgiving on its own: it happily accepts
+/// "12abc" (returning 12) and wraps "-1" into a huge positive number, either of
+/// which would turn a typo into a silently wrong range instead of an error.
+std::uint64_t parse_index(const httplib::Request& req, const char* name,
+                          std::uint64_t fallback) {
+    if (!req.has_param(name)) {
+        return fallback;
+    }
+
+    const std::string value = req.get_param_value(name);
+    if (value.empty() ||
+        value.find_first_not_of("0123456789") != std::string::npos) {
+        throw ApiError{400,
+                       std::string(name) + " must be a non-negative integer"};
+    }
+
+    try {
+        return std::stoull(value);
+    } catch (const std::exception&) {
+        // All digits, so the only way left to fail is not fitting in a u64.
+        throw ApiError{400, std::string(name) + " is out of range"};
+    }
+}
+
+/// GET /blocks?from&to — return an inclusive slice of the chain.
+///
+/// A shared lock, so any number of readers run concurrently; only POST /events
+/// takes the exclusive one.
+void install_blocks(httplib::Server& srv, AppState& state) {
+    srv.Get("/blocks", [&state](const httplib::Request& req,
+                                httplib::Response& res) {
+        const std::uint64_t from = parse_index(req, "from", 0);
+        // Default: as far as the chain goes. Clamped to the real end below,
+        // once the length is known under the lock.
+        const std::uint64_t to_requested =
+            parse_index(req, "to", std::numeric_limits<std::uint64_t>::max());
+
+        std::vector<Block> slice;
+        std::size_t chain_length = 0;
+        {
+            std::shared_lock lock(state.mtx);
+            const std::vector<Block>& blocks = state.chain.blocks();
+            chain_length = blocks.size();  // never 0 — genesis is always there
+
+            const std::uint64_t last = chain_length - 1;
+            // Clamp rather than reject: a caller asking for "everything from
+            // here on" shouldn't have to know the length first, and the
+            // Lambda's "last 50" walks off the end on a short chain.
+            const std::uint64_t to = std::min(to_requested, last);
+
+            // `to` is already <= last, so this one check also catches a `from`
+            // past the end of the chain.
+            if (from > to) {
+                throw ApiError{400, "invalid range: from=" +
+                                        std::to_string(from) + " exceeds to=" +
+                                        std::to_string(to)};
+            }
+
+            // Copy the slice out. The response is serialized after the lock is
+            // released, and a concurrent append can reallocate the vector.
+            slice.assign(blocks.begin() + static_cast<std::ptrdiff_t>(from),
+                         blocks.begin() + static_cast<std::ptrdiff_t>(to) + 1);
+        }
+
+        res.set_content(
+            nlohmann::json{{"blocks", slice}, {"chain_length", chain_length}}
+                .dump(),
+            "application/json");
+    });
+}
+
 }  // namespace
 
 bool serve(AppState& state, const Config& config) {
@@ -141,9 +220,10 @@ bool serve(AppState& state, const Config& config) {
     });
 
     install_events(srv, state);
+    install_blocks(srv, state);
 
-    // GET /blocks (IOT-22) and GET /verify (IOT-23) are added here; they take a
-    // shared lock on `state.mtx`, where the write above takes a unique one.
+    // GET /verify (IOT-23) is added here; like /blocks it takes a shared lock
+    // on `state.mtx`, where the write above takes a unique one.
 
     log::info("listening on " + config.bind_host + ":" +
               std::to_string(config.bind_port));
