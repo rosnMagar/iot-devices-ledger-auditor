@@ -32,4 +32,12 @@ if(STORAGE_CORE_BUILD_TESTS)
     target_link_libraries(test-storage PRIVATE OpenSSL::Crypto)
 
     add_test(NAME storage-unit-tests COMMAND test-storage)
+
+    # Integration tests: these start a real server on a real socket, so unlike
+    # the unit tests above they need Threads.
+    add_executable(test-server tests/test_server.cpp src/server.cpp src/chain.cpp src/storage.cpp)
+    target_include_directories(test-server PRIVATE include third_party)
+    target_link_libraries(test-server PRIVATE OpenSSL::Crypto Threads::Threads)
+
+    add_test(NAME server-integration-tests COMMAND test-server)
 endif()
