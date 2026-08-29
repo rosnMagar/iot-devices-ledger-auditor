@@ -195,19 +195,40 @@ void install_blocks(httplib::Server& srv, AppState& state) {
     });
 }
 
+/// GET /verify — recompute every hash and check the chain's linkage.
+///
+/// O(n) in the chain length and done under the shared lock, so a verify on a
+/// large ledger delays writers for as long as it runs. Acceptable while the
+/// ledger is small; if it grows this wants a snapshot-then-verify split.
+void install_verify(httplib::Server& srv, AppState& state) {
+    srv.Get("/verify", [&state](const httplib::Request&,
+                                httplib::Response& res) {
+        VerifyResult result{};
+        {
+            std::shared_lock lock(state.mtx);
+            result = state.chain.verify();
+        }
+
+        // first_invalid_index is null on a valid chain — the field is always
+        // present so consumers can read it without checking for its existence.
+        nlohmann::json body{
+            {"valid", result.valid},
+            {"chain_length", result.chain_length},
+            {"checked_blocks", result.checked_blocks},
+            {"first_invalid_index", nullptr},
+            {"verified_at", now_rfc3339()},
+        };
+        if (result.first_invalid_index.has_value()) {
+            body["first_invalid_index"] = result.first_invalid_index.value();
+        }
+
+        res.set_content(body.dump(), "application/json");
+    });
+}
+
 }  // namespace
 
-bool serve(AppState& state, const Config& config) {
-    httplib::Server srv;
-
-    // httplib defaults to SO_REUSEPORT on Linux, which lets a second instance
-    // bind the same port and silently split traffic with the first. Use plain
-    // SO_REUSEADDR so a port clash fails loudly instead.
-    srv.set_socket_options([](socket_t sock) {
-        int on = 1;
-        setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, &on, sizeof(on));
-    });
-
+void install_routes(httplib::Server& srv, AppState& state) {
     install_logger(srv);
     install_cors(srv);
     install_error_handling(srv);
@@ -221,9 +242,21 @@ bool serve(AppState& state, const Config& config) {
 
     install_events(srv, state);
     install_blocks(srv, state);
+    install_verify(srv, state);
+}
 
-    // GET /verify (IOT-23) is added here; like /blocks it takes a shared lock
-    // on `state.mtx`, where the write above takes a unique one.
+bool serve(AppState& state, const Config& config) {
+    httplib::Server srv;
+
+    // httplib defaults to SO_REUSEPORT on Linux, which lets a second instance
+    // bind the same port and silently split traffic with the first. Use plain
+    // SO_REUSEADDR so a port clash fails loudly instead.
+    srv.set_socket_options([](socket_t sock) {
+        int on = 1;
+        setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, &on, sizeof(on));
+    });
+
+    install_routes(srv, state);
 
     log::info("listening on " + config.bind_host + ":" +
               std::to_string(config.bind_port));
