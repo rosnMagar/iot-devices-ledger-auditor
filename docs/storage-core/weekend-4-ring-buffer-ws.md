@@ -4,14 +4,19 @@ Status: Not started
 
 ## Goal
 
-Introduce `mpsc::channel<WriteRequest>` + `writer_task`, refactoring `POST /events` to send through it. Add `broadcast::Sender<Block>` and the `/ws/blocks` handler. Integration test: spin up the app in a `tokio::test`, connect via `tokio-tungstenite`, POST an event, assert the WS client receives the corresponding block. Capstone "ring buffer → hash chain → persist → broadcast" demo.
+Build a bounded producer/consumer queue and a writer thread that exclusively owns the `Chain` and log handle, then refactor `POST /events` to go through it. Add a block broadcaster (a per-subscriber ring buffer) and a WebSocket endpoint that streams new blocks. Capstone integration test: start the servers on ephemeral ports, connect a WebSocket client, POST an event, assert the client receives the matching block. "queue → hash chain → persist → broadcast" end to end.
+
+Note that the writer thread is **not** a correctness fix in C++ — the `std::unique_lock` in `POST /events` is already correct. See the 2026-08-30 amendment to [`../decisions/0003-ownership-based-concurrency.md`](../decisions/0003-ownership-based-concurrency.md) for what does justify it.
 
 ## Concepts you need (read/skim before starting)
 
-- **Channels**: `mpsc`, `oneshot`, `broadcast` — Tokio tutorial chapters on channels and shared state
-- **Spawned tasks** (`tokio::spawn`) and task ownership patterns
-- **`select!`** macro — for handling multiple channel sources / shutdown
-- axum WebSocket example (official examples repo) — `/ws` handler pattern, upgrading connections
+- **`std::condition_variable`** — the `wait(lock, predicate)` form and why the bare `wait()` is wrong (spurious wakeups). This is the core primitive for the bounded queue.
+- **`std::promise` / `std::future`** — how a handler thread gets a value back from the writer thread, and what `set_exception` and `broken_promise` mean.
+- **Move-only types in containers** — `WriteRequest` holds a `std::promise`, so it can't be copied; `std::queue::front()` gives a reference you must move from before popping.
+- **Thread shutdown** — a thread parked in `cv.wait()` never returns on its own. A `close()` flag plus `notify_all()` is what lets `main()` join it.
+- **WebSocket basics** — the HTTP Upgrade handshake and text framing, enough to use the vendored library (IOT-45) rather than implement it.
+
+Deliberately *not* on this list: async/await, event loops, and thread pools. cpp-httplib is thread-per-connection and one thread per WebSocket connection is fine at this scale.
 
 ## What we built and why (fill in after)
 
