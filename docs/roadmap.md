@@ -6,7 +6,7 @@ Work proceeds phase-by-phase (and within Phase 1, weekend-by-weekend), each requ
 
 - [ ] `docker compose up --build` works locally (curl `/health`, `/blocks`; visit frontend)
 - [x] `docs/` skeleton exists with all placeholder files
-- [ ] Repo default branch is `dev`; `prod` branch exists — **`prod` exists, but the default branch is `prod`, not `dev`** (see IOT-48)
+- [ ] Repo default branch; `prod` branch exists — `prod` exists and **is** the default, which is the intended model; this line's wording still says `dev` and needs correcting (IOT-48)
 - [x] Push to `dev` triggers CI (all 4 jobs pass) and builds `:dev` images to GHCR (no AWS deploy)
 - [x] Push to `prod` triggers CI + full deploy (GHCR images, EC2 redeploy, Lambda deploy)
 - [ ] `http://<EC2-IP>` shows frontend stub displaying blocks/users via backend-api → storage-core
