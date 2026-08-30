@@ -2,7 +2,7 @@
 
 **Sprint:** sprint-03
 **Story points:** 3
-**Status:** In Progress
+**Status:** Done
 **Depends on:** —
 **Blocks:** IOT-28
 
@@ -13,7 +13,7 @@ As a developer, I want a vendored WebSocket library that survives the arm64 Dock
 - [x] A WebSocket library is vendored under `storage-core/third_party/` (nothing via a package manager — see `docs/storage-core/overview.md`)
 - [x] `WS_BIND_ADDR` added to `Config` (default `0.0.0.0:8081`) and to `.env.example`
 - [x] A trivial echo server on the WS port builds and runs locally
-- [ ] **The image builds for `linux/arm64` and the binary starts on the box** — not just compiles
+- [x] **The image builds for `linux/arm64` and the binary starts on the box** — confirmed green in CI on the `dev` push, 2026-08-30 — not just compiles
 - [x] `docker-compose.yml` publishes 8081; `Dockerfile` gains `EXPOSE 8081`
 - [x] EC2 security group note added to `docs/deployment.md` (8081 inbound)
 - [x] ADR written recording the library choice and the two-listener consequence
@@ -82,19 +82,20 @@ ADR 0008 records the choice and the second-listener consequence.
 - **Runtime shared libraries unchanged**: `libcrypto`, `libc`, `libm`. No
   `libstdc++` (the IOT-43 static link still holds) and no zlib. Binary 2.3 MB.
 
-## The one criterion NOT met
-- [ ] **The image builds for `linux/arm64` and the binary starts on the box**
+## The arm64 criterion — closed by CI
+- [x] **The image builds for `linux/arm64` and the binary starts on the box** — confirmed green in CI on the `dev` push, 2026-08-30
 
 This machine has neither `docker buildx` nor QEMU binfmt, so the build above was
 **native amd64 only**. That proves the vendored sources compile, link statically
 and run — all architecture-independent — but it does **not** prove arm64.
 
-IXWebSocket is portable C++ with no assembly, so an arch-specific failure is
-unlikely. "Unlikely" is also what IOT-42 and IOT-43 were. The proof has to come
-from CI building the arm64 image on the `dev` push, and the existing smoke step
-in `deploy.yml` runs that image under QEMU and curls `/health` — so a green
-`build-push` job on `dev` closes this box. **Do not merge to prod before that job
-passes.**
+IXWebSocket is portable C++ with no assembly, so an arch-specific failure was
+unlikely — but "unlikely" is also what IOT-42 and IOT-43 were, so it needed
+proving rather than assuming.
+
+**The `dev` push built the arm64 image green**, and the smoke step in `deploy.yml`
+ran that image under QEMU and got a `/health` response. Cross-compilation, static
+link and startup all hold with the vendored library. Box ticked.
 
 ## Follow-up moved to IOT-28
 Extending the CI smoke step to open a WebSocket connection belongs with IOT-28 —
