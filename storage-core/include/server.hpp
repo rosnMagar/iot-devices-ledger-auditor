@@ -4,6 +4,7 @@
 
 #include <chain.hpp>
 #include <config.hpp>
+#include <writer.hpp>
 
 // Forward-declared rather than including httplib.h: that header is ~10k lines,
 // and only src/server.cpp and the integration test actually need its guts.
@@ -25,6 +26,12 @@ struct AppState {
     Chain chain;
     std::shared_mutex mtx;
     std::ofstream log;  // append handle for the ledger file
+
+    /// The writer thread's queue, once one exists (IOT-24). A pointer rather
+    /// than a reference so AppState can still be constructed without a queue —
+    /// POST /events keeps its unique_lock until IOT-26 moves it across, and the
+    /// existing tests construct AppState directly. Null means "no writer thread".
+    WriteQueue* write_queue = nullptr;
 };
 
 /// Install every handler — logging, CORS, error mapping, and all four routes —
