@@ -22,6 +22,14 @@ jobs:
       - name: Set frontend API URL
         run: |
           if [ "${{ github.ref_name }}" = "prod" ]; then
+            # An empty EC2_HOST would produce "http://:8000" — a malformed URL
+            # baked into the bundle, which only shows up as a broken page in a
+            # browser. Fail the build instead of shipping it.
+            if [ -z "${{ secrets.EC2_HOST }}" ]; then
+              echo "EC2_HOST secret is empty — the frontend bundle would be built" >&2
+              echo "with a malformed API URL. Set it before deploying to prod." >&2
+              exit 1
+            fi
             echo "FRONTEND_API_URL=http://${{ secrets.EC2_HOST }}:8000" >> $GITHUB_ENV
           else
             echo "FRONTEND_API_URL=http://localhost:8000" >> $GITHUB_ENV
