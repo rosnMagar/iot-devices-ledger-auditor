@@ -2,16 +2,16 @@
 
 **Sprint:** sprint-01
 **Story points:** 1
-**Status:** To Do
+**Status:** Done
 **Depends on:** —
 
 ## Story
 As a developer, I want all CI jobs passing on `dev` so that the walking skeleton is verified before any deploy.
 
 ## Acceptance criteria
-- [ ] `storage-core`, `backend-api`, `frontend`, `auditor` jobs all pass on the latest `dev` commit
-- [ ] No QEMU/build errors remain in `deploy.yml` image builds
-- [ ] A green run is linked in this ticket before moving on
+- [x] `storage-core`, `backend-api`, `frontend`, `auditor` jobs all pass on the latest `dev` commit
+- [x] No QEMU/build errors remain in `deploy.yml` image builds
+- [x] A green run is linked in this ticket before moving on
 
 ## Implementation notes
 - Watch the Actions tab for the latest `dev` push.
