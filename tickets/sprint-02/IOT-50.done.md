@@ -2,7 +2,7 @@
 
 **Sprint:** sprint-02
 **Story points:** 1
-**Status:** In Progress
+**Status:** Done
 **Depends on:** —
 
 ## Story
@@ -14,7 +14,7 @@ As an operator, I want the EC2 instance to keep a fixed public address so that r
 - [x] Cost behaviour noted (billed while associated; billed more while idle)
 - [x] **Elastic IP actually allocated and associated in AWS** — console/CLI work, not repo work
 - [x] `EC2_HOST` secret updated to the Elastic IP
-- [ ] A prod deploy re-run so the frontend image is rebuilt against the new address
+- [x] A prod deploy re-run so the frontend image is rebuilt against the new address
 
 ## Why
 The auto-assigned public IPv4 changes whenever the instance is stopped and
@@ -49,10 +49,14 @@ gh secret set EC2_HOST --body "<elastic-ip>"
 gh workflow run deploy.yml --ref prod
 ```
 
-The one box still open is the frontend rebuild. `VITE_API_BASE_URL` is inlined
-into the bundle at build time (IOT-52), so the frontend keeps calling the old
-address until a prod deploy rebuilds it. Merging PR #27 runs that deploy, which
-closes this ticket as a side effect — no separate action needed.
+The prod deploy was re-run afterwards, rebuilding the frontend image against the
+new address — necessary because `VITE_API_BASE_URL` is inlined into the bundle at
+build time (IOT-52), so the old address would otherwise have survived the change.
+
+The instance's public address no longer moves when it restarts, which removes the
+cause of the `dial tcp ***:22: i/o timeout` deploy failure and of the repeated
+`EC2_HOST` churn that `CORS_ORIGINS` (IOT-51) and `VITE_API_BASE_URL` (IOT-52)
+both derive from.
 
 ## Follow-ups
 - With a stable address, Phase 5's TLS/reverse-proxy work becomes possible: a
