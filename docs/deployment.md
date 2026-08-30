@@ -137,6 +137,14 @@ The automated deploy (`.github/workflows/deploy.yml`) exports `TAG=prod` itself,
 so a wrong `.env` on the box can no longer send the wrong images to production.
 Setting it here still matters for anything you run by hand over SSH.
 
+The deploy also exports `CORS_ORIGINS=http://<EC2_HOST>`. The default in
+`.env.example` is the Vite dev server (`http://localhost:5173`), which is correct
+only locally: in production the frontend is served by nginx on port 80, so the
+browser sends `Origin: http://<EC2-IP>` when calling backend-api on `:8000`. If
+that origin isn't allowed, backend-api still answers 200 and the *browser*
+discards the response — no server-side error anywhere. Run backend-api by hand
+over SSH and you must set this yourself.
+
 ---
 
 ## 5. Create an IAM user for Lambda deploys
