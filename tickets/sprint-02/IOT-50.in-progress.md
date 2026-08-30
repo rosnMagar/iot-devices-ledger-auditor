@@ -12,8 +12,8 @@ As an operator, I want the EC2 instance to keep a fixed public address so that r
 - [x] `docs/deployment.md` documents allocating and associating an Elastic IP, before any step that references the address
 - [x] The four places the IP is baked into are listed, so the blast radius is obvious
 - [x] Cost behaviour noted (billed while associated; billed more while idle)
-- [ ] **Elastic IP actually allocated and associated in AWS** — console/CLI work, not repo work
-- [ ] `EC2_HOST` secret updated to the Elastic IP
+- [x] **Elastic IP actually allocated and associated in AWS** — console/CLI work, not repo work
+- [x] `EC2_HOST` secret updated to the Elastic IP
 - [ ] A prod deploy re-run so the frontend image is rebuilt against the new address
 
 ## Why
@@ -34,9 +34,9 @@ The address is not in one place. It is in four:
 The frontend one is the nastiest: the image is rebuilt from a stale value only
 when the workflow runs, so the symptom outlives the fix unless a deploy follows.
 
-## Remaining work is not in this repo
-The doc change is done and committed. Allocating the address is AWS console/CLI
-work:
+## Completed 2026-08-30
+The Elastic IP is allocated and associated, and `EC2_HOST` now points at it.
+For reference, the commands were:
 
 ```bash
 aws ec2 allocate-address --domain vpc --region us-east-2 \
@@ -49,8 +49,10 @@ gh secret set EC2_HOST --body "<elastic-ip>"
 gh workflow run deploy.yml --ref prod
 ```
 
-Ticket stays `.in-progress` until those three boxes are ticked — the
-documentation alone doesn't stop the outage recurring.
+The one box still open is the frontend rebuild. `VITE_API_BASE_URL` is inlined
+into the bundle at build time (IOT-52), so the frontend keeps calling the old
+address until a prod deploy rebuilds it. Merging PR #27 runs that deploy, which
+closes this ticket as a side effect — no separate action needed.
 
 ## Follow-ups
 - With a stable address, Phase 5's TLS/reverse-proxy work becomes possible: a

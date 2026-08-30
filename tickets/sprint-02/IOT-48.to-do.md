@@ -1,4 +1,4 @@
-# IOT-48: Set the repository default branch to `dev`
+# IOT-48: Reconcile the roadmap's default-branch line with the actual model
 
 **Sprint:** sprint-02
 **Story points:** 1
@@ -6,32 +6,35 @@
 **Depends on:** —
 
 ## Story
-As a developer, I want the repo's default branch to be `dev` so that a PR opened without an explicit base doesn't target production.
+As a developer, I want the docs to agree about which branch is default so that the roadmap doesn't describe a repo that was never intended.
 
 ## Acceptance criteria
-- [ ] GitHub default branch changed from `prod` to `dev`
-- [ ] `docs/branching-and-cicd.md` states which branch is default and why
-- [ ] Roadmap's "Repo default branch is `dev`" box can be ticked
+- [ ] `docs/roadmap.md` Phase 0 no longer claims the default branch should be `dev`
+- [ ] The line reflects the real model: `prod` is the default and deploy branch, `dev` is the integration branch
+- [ ] Box can then be ticked
 
-## Why
-`gh api repos/rosnMagar/iot-devices-ledger-auditor --jq .default_branch` returns
-**`prod`**, but `docs/roadmap.md` requires `dev`. Two consequences:
+## The actual situation
+`docs/roadmap.md` Phase 0 lists:
 
-- **`gh pr create` and the web UI default to base `prod`.** Every PR aimed at
-  `dev` needs an explicit `--base dev` or it silently targets production. PR #20
-  was created with a generic auto-title against `prod`, which is the shape this
-  produces.
-- **A fresh clone checks out `prod`**, so work started without thinking lands on
-  the production branch.
+> - [ ] Repo default branch is `dev`; `prod` branch exists
 
-The per-ticket workflow in `CLAUDE.md` does open prod PRs from feature branches,
-so `prod` as a *target* is correct — it just shouldn't be the **default** one you
-get by not specifying.
+The repository was created 2026-06-14 with `prod` as the default and **has never
+been anything else**. `docs/branching-and-cicd.md` is being updated (currently
+uncommitted) to say so explicitly:
+
+> `prod` — deploy branch and GitHub default branch.
+
+So the repo config is intentional and the **roadmap line is the stale one**. This
+ticket originally proposed changing the default branch to `dev`; that was wrong,
+based on reading the roadmap without checking the branching doc.
+
+## Consequence worth keeping in mind
+With `prod` as default, `gh pr create` and the web UI target `prod` unless
+`--base dev` is passed. That matches the per-ticket workflow in `CLAUDE.md`,
+where prod PRs come from feature branches — but it does mean an unthinking PR
+lands against production. Phase 5 already lists branch protection on `prod`,
+which is the right mitigation rather than moving the default.
 
 ## Implementation notes
-- One setting: Settings → General → Default branch, or
-  `gh api -X PATCH repos/rosnMagar/iot-devices-ledger-auditor -f default_branch=dev`
-- Existing open PRs keep whatever base they were created with; this only affects
-  new ones.
-- Worth pairing with branch protection on `prod` (Phase 5 already lists it) so the
-  production branch isn't both the default *and* unprotected.
+- Fold into the same pass as committing the pending `docs/branching-and-cicd.md`
+  edit, so both files land consistent.
