@@ -113,6 +113,12 @@ jobs:
           script: |
             cd /opt/audit-ledger
             git pull origin prod
+
+            # TAG is set here rather than read from the box's .env. It used to
+            # come from that file, so a missing or stale .env meant compose fell
+            # back to :dev and deployed development images to production while
+            # reporting success. The deploy now states the tag it means.
+            export TAG=prod
             docker compose pull
             docker compose up -d
 

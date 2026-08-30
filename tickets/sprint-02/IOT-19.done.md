@@ -2,7 +2,7 @@
 
 **Sprint:** sprint-02
 **Story points:** 2
-**Status:** Review
+**Status:** Done
 **Depends on:** —
 
 ## Story
