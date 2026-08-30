@@ -9,12 +9,13 @@ Work proceeds phase-by-phase (and within Phase 1, weekend-by-weekend), each requ
 - [ ] Repo default branch; `prod` branch exists — `prod` exists and **is** the default, which is the intended model; this line's wording still says `dev` and needs correcting (IOT-48)
 - [x] Push to `dev` triggers CI (all 4 jobs pass) and builds `:dev` images to GHCR (no AWS deploy)
 - [x] Push to `prod` triggers CI + full deploy (GHCR images, EC2 redeploy, Lambda deploy)
-- [ ] `http://<EC2-IP>` shows frontend stub displaying blocks/users via backend-api → storage-core
-- [ ] Lambda exists in AWS, manually invokable, log shows successful call to `http://<EC2-IP>:8080/verify`
+- [x] `http://<EC2-IP>` shows frontend stub displaying blocks/users via backend-api → storage-core — IOT-7
+- [x] Lambda exists in AWS, manually invokable, log shows successful call to `http://<EC2-IP>:8080/verify` — IOT-8
 
-The four unticked items are exactly what IOT-1, IOT-6, IOT-7 and IOT-8 cover — all
-still `.to-do` in sprint-01 despite the pipeline demonstrably working. Tick them
-when those tickets close.
+IOT-7 and IOT-8 are closed. The two still unticked are the local
+`docker compose up --build` path and the default-branch wording (IOT-48); IOT-1
+and IOT-6 remain open in sprint-01 even though IOT-7/IOT-8 depend on them and are
+done.
 
 ## Phase 1 — C++ storage-core (~3-4 weekends, centerpiece)
 
