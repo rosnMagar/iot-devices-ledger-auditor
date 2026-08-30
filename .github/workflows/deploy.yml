@@ -119,6 +119,15 @@ jobs:
             # back to :dev and deployed development images to production while
             # reporting success. The deploy now states the tag it means.
             export TAG=prod
+
+            # Same reasoning: CORS_ORIGINS defaults to the Vite dev server
+            # (http://localhost:5173), which is never the production origin. The
+            # frontend is served by nginx on :80, so the browser sends
+            # Origin: http://<host> when calling backend-api on :8000 — a
+            # cross-origin request that was being rejected. Derived from
+            # EC2_HOST so it can't drift from the address actually in use.
+            export CORS_ORIGINS=http://${{ secrets.EC2_HOST }}
+
             docker compose pull
             docker compose up -d
 
