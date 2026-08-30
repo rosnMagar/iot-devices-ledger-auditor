@@ -39,6 +39,52 @@ In the AWS console (or `aws ec2 run-instances`):
 
 ---
 
+## 1b. Attach an Elastic IP
+
+**Do this before anything else references the address.** A stopped-and-started
+instance gets a *new* auto-assigned public IP, and that address is baked into
+four places:
+
+| Where | What breaks |
+|---|---|
+| `EC2_HOST` secret → `appleboy/ssh-action` | deploy fails with `dial tcp ***:22: i/o timeout` |
+| `EC2_HOST` → `FRONTEND_API_URL` → `VITE_API_BASE_URL` | frontend calls the old IP; **baked in at image build time**, so it needs a rebuild, not a restart |
+| `EC2_HOST` → Lambda `StorageCoreUrl` | auditor can't reach `/verify` |
+| ESP32 firmware `secrets.h` (Phase 1.5) | devices post to nothing |
+
+An Elastic IP is a fixed address you own, so a restart changes nothing.
+
+```bash
+# 1. Allocate
+aws ec2 allocate-address --domain vpc --region us-east-2 \
+  --tag-specifications 'ResourceType=elastic-ip,Tags=[{Key=Name,Value=iot-ledger}]'
+
+# 2. Associate it with the instance (use the AllocationId printed above)
+aws ec2 associate-address --region us-east-2 \
+  --instance-id i-XXXXXXXX --allocation-id eipalloc-XXXXXXXX
+
+# 3. Confirm
+aws ec2 describe-addresses --region us-east-2 \
+  --query 'Addresses[].[PublicIp,InstanceId,AllocationId]' --output table
+```
+
+Then point the secret at it and rebuild, so the frontend image picks up the new
+URL:
+
+```bash
+gh secret set EC2_HOST --body "<elastic-ip>"
+gh workflow run deploy.yml --ref prod
+```
+
+> **Cost.** AWS bills for public IPv4 addresses (including in-use Elastic IPs) —
+> currently around $0.005/hour, roughly $3.60/month. The instance is already
+> paying that for its auto-assigned address, so attaching an Elastic IP is close
+> to cost-neutral while it stays associated. An Elastic IP that is allocated but
+> **not** associated is billed at a higher rate — release it if you terminate the
+> instance.
+
+---
+
 ## 2. Install Docker on the EC2 instance
 
 SSH in: `ssh -i your-key.pem ubuntu@<EC2-IP>`
