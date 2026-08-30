@@ -5,19 +5,23 @@ Work proceeds phase-by-phase (and within Phase 1, weekend-by-weekend), each requ
 ## Phase 0 — Monorepo Scaffold + Walking Skeleton (~1.5-2 weekends)
 
 - [ ] `docker compose up --build` works locally (curl `/health`, `/blocks`; visit frontend)
-- [ ] `docs/` skeleton exists with all placeholder files
-- [ ] Repo default branch is `dev`; `prod` branch exists
-- [ ] Push to `dev` triggers CI (all 4 jobs pass) and builds `:dev` images to GHCR (no AWS deploy)
-- [ ] Push to `prod` triggers CI + full deploy (GHCR images, EC2 redeploy, Lambda deploy)
+- [x] `docs/` skeleton exists with all placeholder files
+- [ ] Repo default branch is `dev`; `prod` branch exists — **`prod` exists, but the default branch is `prod`, not `dev`** (see IOT-48)
+- [x] Push to `dev` triggers CI (all 4 jobs pass) and builds `:dev` images to GHCR (no AWS deploy)
+- [x] Push to `prod` triggers CI + full deploy (GHCR images, EC2 redeploy, Lambda deploy)
 - [ ] `http://<EC2-IP>` shows frontend stub displaying blocks/users via backend-api → storage-core
 - [ ] Lambda exists in AWS, manually invokable, log shows successful call to `http://<EC2-IP>:8080/verify`
 
+The four unticked items are exactly what IOT-1, IOT-6, IOT-7 and IOT-8 cover — all
+still `.to-do` in sprint-01 despite the pipeline demonstrably working. Tick them
+when those tickets close.
+
 ## Phase 1 — C++ storage-core (~3-4 weekends, centerpiece)
 
-- [ ] Weekend 1 — Core data model (`block.hpp`, `chain.hpp`, SHA-256 hashing, unit tests)
-- [ ] Weekend 2 — Persistence (NDJSON append/load, reload-on-startup, tamper-detection test)
-- [ ] Weekend 3 — REST API (HTTP router, `Chain` behind a `std::shared_mutex`, error handling, integration tests)
-- [ ] Weekend 4 — Ring buffer + WebSocket (producer/consumer queue + writer thread, `/ws/blocks`, capstone integration test)
+- [x] Weekend 1 — Core data model (`block.hpp`, `chain.hpp`, SHA-256 hashing, unit tests) — IOT-9…13
+- [x] Weekend 2 — Persistence (NDJSON append/load, reload-on-startup, tamper-detection test) — IOT-14…17
+- [x] Weekend 3 — REST API (HTTP router, `Chain` behind a `std::shared_mutex`, error handling, integration tests) — IOT-18…23
+- [ ] Weekend 4 — Ring buffer + WebSocket (producer/consumer queue + writer thread, `/ws/blocks`, capstone integration test) — IOT-24…29, IOT-44, IOT-45
 
 ## Phase 1.5 — IoT Firmware PoC (~1 weekend)
 
