@@ -10,9 +10,20 @@ find_package(OpenSSL REQUIRED)
 # cpp-httplib runs each connection on its own thread.
 find_package(Threads REQUIRED)
 
+# IXWebSocket, vendored (BSD-3-Clause). Compiled from source rather than via
+# upstream's CMakeLists so the options stay ours: neither IXWEBSOCKET_USE_TLS nor
+# IXWEBSOCKET_USE_ZLIB is defined, which is what keeps it free of OpenSSL and
+# zlib. See third_party/ixwebsocket/VENDORING.md before changing that.
+file(GLOB IXWEBSOCKET_SOURCES third_party/ixwebsocket/*.cpp)
+add_library(ixwebsocket STATIC ${IXWEBSOCKET_SOURCES})
+target_include_directories(ixwebsocket PUBLIC third_party)
+target_link_libraries(ixwebsocket PUBLIC Threads::Threads)
+# Upstream's own warnings are not our problem and would drown ours.
+target_compile_options(ixwebsocket PRIVATE -w)
+
 add_executable(storage-core src/main.cpp src/chain.cpp src/storage.cpp src/server.cpp)
 target_include_directories(storage-core PRIVATE include third_party)
-target_link_libraries(storage-core PRIVATE OpenSSL::Crypto Threads::Threads)
+target_link_libraries(storage-core PRIVATE OpenSSL::Crypto Threads::Threads ixwebsocket)
 
 # Tests are ON for local dev and CI, but the production Docker image builds with
 # -DSTORAGE_CORE_BUILD_TESTS=OFF so it never needs the tests/ sources.
@@ -40,4 +51,11 @@ if(STORAGE_CORE_BUILD_TESTS)
     target_link_libraries(test-server PRIVATE OpenSSL::Crypto Threads::Threads)
 
     add_test(NAME server-integration-tests COMMAND test-server)
+
+    # IOT-45 build probe: proves the vendored IXWebSocket compiles, links and
+    # binds. Replaced by the real WebSocket tests in IOT-29.
+    add_executable(ws-probe tests/ws_probe.cpp)
+    target_link_libraries(ws-probe PRIVATE ixwebsocket)
+
+    add_test(NAME ws-probe COMMAND ws-probe)
 endif()

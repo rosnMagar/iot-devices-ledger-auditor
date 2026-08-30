@@ -25,4 +25,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates
     && rm -rf /var/lib/apt/lists/*
 COPY --from=builder /app/build/storage-core /usr/local/bin/storage-core
 EXPOSE 8080
+# WebSocket listener (IOT-28). A second port because cpp-httplib and
+# IXWebSocket each own a listening socket and cannot share 8080.
+EXPOSE 8081
 CMD ["storage-core"]

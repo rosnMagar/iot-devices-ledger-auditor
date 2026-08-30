@@ -33,7 +33,8 @@ In the AWS console (or `aws ec2 run-instances`):
 | 22 | TCP | Your IP only | SSH access |
 | 80 | TCP | 0.0.0.0/0 | Frontend |
 | 8000 | TCP | 0.0.0.0/0 | backend-api |
-| 8080 | TCP | 0.0.0.0/0 | storage-core (Lambda auditor + ESP32) |
+| 8080 | TCP | 0.0.0.0/0 | storage-core REST (Lambda auditor + ESP32) |
+| 8081 | TCP | 0.0.0.0/0 | storage-core WebSocket (live block feed, IOT-28) |
 
 > Ports 8000/8080 stay open for Phase 0 demo; narrow them in Phase 5 once a reverse proxy is in place.
 
