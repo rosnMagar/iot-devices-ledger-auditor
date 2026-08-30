@@ -1,6 +1,6 @@
 services:
   storage-core:
-    image: ghcr.io/rosnmagar/storage-core:${TAG:-dev}
+    image: ghcr.io/rosnmagar/storage-core:${TAG:?TAG is not set — set it in .env (dev or prod), see docs/deployment.md}
     build: ./storage-core
     ports:
       - "8080:8080"
@@ -13,7 +13,7 @@ services:
     restart: unless-stopped
 
   backend-api:
-    image: ghcr.io/rosnmagar/backend-api:${TAG:-dev}
+    image: ghcr.io/rosnmagar/backend-api:${TAG:?TAG is not set — set it in .env (dev or prod), see docs/deployment.md}
     build: ./backend-api
     ports:
       - "8000:8000"
@@ -26,7 +26,7 @@ services:
     restart: unless-stopped
 
   frontend:
-    image: ghcr.io/rosnmagar/frontend:${TAG:-dev}
+    image: ghcr.io/rosnmagar/frontend:${TAG:?TAG is not set — set it in .env (dev or prod), see docs/deployment.md}
     build:
       context: ./frontend
       args:

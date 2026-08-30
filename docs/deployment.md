@@ -82,6 +82,15 @@ VITE_API_BASE_URL=http://<EC2-IP>:8000
 
 `TAG=prod` tells `docker compose pull` to pull the `:prod`-tagged images from GHCR.
 
+`TAG` ships blank in `.env.example` on purpose. Leave it blank and `docker
+compose` stops with `TAG is not set` instead of guessing — it used to default to
+`dev`, which meant a box with a missing `.env` pulled development images, started
+cleanly, and gave no sign anything was wrong.
+
+The automated deploy (`.github/workflows/deploy.yml`) exports `TAG=prod` itself,
+so a wrong `.env` on the box can no longer send the wrong images to production.
+Setting it here still matters for anything you run by hand over SSH.
+
 ---
 
 ## 5. Create an IAM user for Lambda deploys
