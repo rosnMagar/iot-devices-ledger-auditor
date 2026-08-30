@@ -1,6 +1,9 @@
 import { useEffect, useState } from 'react'
 
-const API = (import.meta.env.VITE_API_BASE_URL as string | undefined) ?? 'http://localhost:8000'
+// No localhost fallback. Vite inlines this at build time, so if it's missing the
+// bundle is already wrong and every user's browser would silently call their own
+// machine. Better to say so on the page than to look broken for no visible reason.
+const API = (import.meta.env.VITE_API_BASE_URL as string | undefined)?.trim()
 
 interface Block {
   index: number
@@ -27,6 +30,8 @@ export default function App() {
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
+    if (!API) return  // nothing to fetch; the misconfiguration is rendered below
+
     Promise.all([
       fetch(`${API}/blocks`).then((r) => r.json()),
       fetch(`${API}/users`).then((r) => r.json()),
@@ -37,6 +42,16 @@ export default function App() {
       })
       .catch((e: unknown) => setError(String(e)))
   }, [])
+
+  if (!API) {
+    return (
+      <p style={{ color: 'red', fontFamily: 'monospace', padding: '2rem' }}>
+        This build has no <code>VITE_API_BASE_URL</code>, so it doesn't know where
+        the API is. It is baked in at image build time — pass it as a build arg
+        and rebuild; restarting the container will not help.
+      </p>
+    )
+  }
 
   if (error) return <p style={{ color: 'red' }}>Error: {error}</p>
 
