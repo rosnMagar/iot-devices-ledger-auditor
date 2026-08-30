@@ -6,7 +6,16 @@ from fastapi.middleware.cors import CORSMiddleware
 
 app = FastAPI(title="backend-api (stub)")
 
-_cors_origins = os.environ.get("CORS_ORIGINS", "http://localhost:5173").split(",")
+# Comma-separated list of allowed browser origins. The default is the Vite dev
+# server and is only ever right locally — in production this is set by the
+# deploy workflow from EC2_HOST. Entries are stripped because "a, b" would
+# otherwise yield " b", which silently matches no origin and reads as a CORS
+# bug with no error anywhere in the logs.
+_cors_origins = [
+    origin.strip()
+    for origin in os.environ.get("CORS_ORIGINS", "http://localhost:5173").split(",")
+    if origin.strip()
+]
 app.add_middleware(
     CORSMiddleware,
     allow_origins=_cors_origins,
