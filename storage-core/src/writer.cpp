@@ -6,6 +6,7 @@
 #include <string>
 #include <utility>
 
+#include <broadcast.hpp>
 #include <log.hpp>
 #include <server.hpp>
 #include <storage.hpp>
@@ -105,6 +106,16 @@ void writer_loop(WriteQueue& queue, AppState& state, std::ofstream log) {
                 {
                     std::unique_lock lock(state.mtx);
                     reply = state.chain.push_persisted(std::move(created));
+                }
+
+                // Fan out only after the block is both on disk and visible to
+                // readers, so a subscriber can never be told about a block that
+                // GET /blocks would not yet return.
+                //
+                // Outside the write lock: publish() is bounded and never
+                // blocks, but there is no reason to make readers wait on it.
+                if (state.broadcaster != nullptr) {
+                    state.broadcaster->publish(reply);
                 }
 
                 respond_to.set_value(std::move(reply));

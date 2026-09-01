@@ -7,6 +7,7 @@
 #include <thread>
 #include <utility>
 
+#include "broadcast.hpp"
 #include "chain.hpp"
 #include "config.hpp"
 #include "log.hpp"
@@ -54,6 +55,13 @@ int run() {
     // through this queue; nothing else may touch the ledger file.
     ledger::WriteQueue queue;
     state.write_queue = &queue;
+
+    // Declared before the writer thread so it outlives it: the writer publishes
+    // to this on every append, and must not be left holding a dangling pointer
+    // while it drains during shutdown.
+    ledger::Broadcaster broadcaster;
+    state.broadcaster = &broadcaster;
+
     std::thread writer(ledger::writer_loop, std::ref(queue), std::ref(state),
                        std::move(log));
 
@@ -66,6 +74,10 @@ int run() {
     queue.close();
     writer.join();
     ledger::log::info("writer thread joined");
+
+    // After the writer is joined, so nothing can publish to a subscription that
+    // has already been closed.
+    broadcaster.close_all();
 
     return ok ? 0 : 1;
 }

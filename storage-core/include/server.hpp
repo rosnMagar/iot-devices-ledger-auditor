@@ -1,6 +1,7 @@
 #pragma once
 #include <shared_mutex>
 
+#include <broadcast.hpp>
 #include <chain.hpp>
 #include <config.hpp>
 #include <writer.hpp>
@@ -35,6 +36,11 @@ struct AppState {
     /// Null means "no writer attached", and POST /events answers 500 rather
     /// than pretending to have written something.
     WriteQueue* write_queue = nullptr;
+
+    /// Where the writer fans newly appended blocks out to the live feed
+    /// (IOT-27). Optional in the same way and for the same reason: null simply
+    /// means nothing is listening, and publishing is skipped.
+    Broadcaster* broadcaster = nullptr;
 };
 
 /// Install every handler — logging, CORS, error mapping, and all four routes —
