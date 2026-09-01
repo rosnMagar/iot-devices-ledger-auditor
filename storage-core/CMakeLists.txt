@@ -59,7 +59,7 @@ if(STORAGE_CORE_BUILD_TESTS)
 
     add_test(NAME ws-probe COMMAND ws-probe)
 
-    add_executable(test-writer tests/test_writer.cpp src/writer.cpp src/chain.cpp)
+    add_executable(test-writer tests/test_writer.cpp src/writer.cpp src/chain.cpp src/storage.cpp)
     target_include_directories(test-writer PRIVATE include third_party)
     target_link_libraries(test-writer PRIVATE OpenSSL::Crypto Threads::Threads)
 

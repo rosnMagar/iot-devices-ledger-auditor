@@ -6,9 +6,15 @@
 #include <optional>
 #include <queue>
 
+#include <fstream>
+
 #include <block.hpp>
 
 namespace ledger {
+
+// Defined in server.hpp, which includes this header — forward-declared to keep
+// the include one-directional.
+struct AppState;
 
 /// One pending append, plus the channel its result travels back on.
 ///
@@ -65,5 +71,17 @@ private:
     std::size_t capacity_;
     bool closed_ = false;
 };
+
+/// The single writer. Owns `log` for its whole lifetime and is the only thread
+/// that ever mutates `state.chain`.
+///
+/// Runs until the queue is closed *and* drained, then returns so main() can join
+/// it. Never throws: an exception escaping a std::thread's entry point calls
+/// std::terminate and takes the process down, so every failure is reported back
+/// through the requesting handler's future instead.
+///
+/// Takes the write lock only for the vector push. The hash and the file write
+/// happen outside it, so a slow disk delays writers but never readers.
+void writer_loop(WriteQueue& queue, AppState& state, std::ofstream log);
 
 }  // namespace ledger
