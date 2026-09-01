@@ -21,7 +21,7 @@ target_link_libraries(ixwebsocket PUBLIC Threads::Threads)
 # Upstream's own warnings are not our problem and would drown ours.
 target_compile_options(ixwebsocket PRIVATE -w)
 
-add_executable(storage-core src/main.cpp src/chain.cpp src/storage.cpp src/server.cpp src/writer.cpp)
+add_executable(storage-core src/main.cpp src/chain.cpp src/storage.cpp src/server.cpp src/writer.cpp src/broadcast.cpp)
 target_include_directories(storage-core PRIVATE include third_party)
 target_link_libraries(storage-core PRIVATE OpenSSL::Crypto Threads::Threads ixwebsocket)
 
@@ -46,7 +46,7 @@ if(STORAGE_CORE_BUILD_TESTS)
 
     # Integration tests: these start a real server on a real socket, so unlike
     # the unit tests above they need Threads.
-    add_executable(test-server tests/test_server.cpp src/server.cpp src/chain.cpp src/storage.cpp src/writer.cpp)
+    add_executable(test-server tests/test_server.cpp src/server.cpp src/chain.cpp src/storage.cpp src/writer.cpp src/broadcast.cpp)
     target_include_directories(test-server PRIVATE include third_party)
     target_link_libraries(test-server PRIVATE OpenSSL::Crypto Threads::Threads)
 
@@ -59,9 +59,15 @@ if(STORAGE_CORE_BUILD_TESTS)
 
     add_test(NAME ws-probe COMMAND ws-probe)
 
-    add_executable(test-writer tests/test_writer.cpp src/writer.cpp src/chain.cpp src/storage.cpp)
+    add_executable(test-writer tests/test_writer.cpp src/writer.cpp src/chain.cpp src/storage.cpp src/broadcast.cpp)
     target_include_directories(test-writer PRIVATE include third_party)
     target_link_libraries(test-writer PRIVATE OpenSSL::Crypto Threads::Threads)
 
     add_test(NAME writer-unit-tests COMMAND test-writer)
+
+    add_executable(test-broadcast tests/test_broadcast.cpp src/broadcast.cpp src/chain.cpp)
+    target_include_directories(test-broadcast PRIVATE include third_party)
+    target_link_libraries(test-broadcast PRIVATE OpenSSL::Crypto Threads::Threads)
+
+    add_test(NAME broadcast-unit-tests COMMAND test-broadcast)
 endif()
