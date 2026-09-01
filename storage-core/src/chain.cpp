@@ -29,6 +29,11 @@ const Block& Chain::append(EventPayload event) {
     return blocks_.back();
 }
 
+const Block& Chain::push_persisted(Block block) {
+    blocks_.push_back(std::move(block));
+    return blocks_.back();
+}
+
 const Block& Chain::latest() const {
     return blocks_.back();
 }

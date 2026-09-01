@@ -30,6 +30,17 @@ public:
     static Chain load(std::vector<Block> blocks);
 
     const Block& append(EventPayload event);
+
+    /// Append a block that has already been computed and persisted.
+    ///
+    /// The writer thread (IOT-25) hashes the block and writes it to disk *before*
+    /// taking the write lock, so readers are only blocked for the vector push
+    /// rather than across a SHA-256 and a file flush. append() cannot be used for
+    /// that because it does the computing itself.
+    ///
+    /// Stored verbatim, like load(): no recompute, so verify() still detects a
+    /// block that doesn't match its own hash.
+    const Block& push_persisted(Block block);
     const Block& latest() const;
     std::size_t size() const;
 

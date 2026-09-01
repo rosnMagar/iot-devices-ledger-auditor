@@ -4,10 +4,12 @@ services:
     build: ./storage-core
     ports:
       - "8080:8080"
+      - "8081:8081"
     environment:
       LOG_LEVEL: ${LOG_LEVEL:-info}
       LEDGER_PATH: ${LEDGER_PATH:-/app/data/ledger.log}
       BIND_ADDR: ${BIND_ADDR:-0.0.0.0:8080}
+      WS_BIND_ADDR: ${WS_BIND_ADDR:-0.0.0.0:8081}
     volumes:
       - ledger-data:/app/data
     restart: unless-stopped

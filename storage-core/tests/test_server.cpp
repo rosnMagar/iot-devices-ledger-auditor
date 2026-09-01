@@ -1,9 +1,12 @@
 #define DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
 #include <doctest/doctest.h>
 
+#include <algorithm>
+#include <cstdint>
 #include <filesystem>
 #include <fstream>
 #include <functional>
+#include <mutex>
 #include <string>
 #include <thread>
 #include <vector>
@@ -14,6 +17,7 @@
 #include "block.hpp"
 #include "chain.hpp"
 #include "server.hpp"
+#include "writer.hpp"
 #include "storage.hpp"
 
 using namespace ledger;
@@ -32,9 +36,11 @@ namespace {
 struct TestServer {
     std::filesystem::path dir;
     AppState state;
+    WriteQueue queue;
     httplib::Server srv;
     int port = 0;
     std::thread thread;
+    std::thread writer;
 
     /// `seed` runs against the ledger path before the server loads it, so a case
     /// can start from a chain the API itself could never produce — a tampered
@@ -50,7 +56,13 @@ struct TestServer {
         const auto path = dir / "ledger.log";
         if (seed) seed(path);
         state.chain = load_chain(path);  // missing file -> genesis-only chain
-        state.log = open_append(path);
+
+        // POST /events writes through the writer thread now (IOT-26), so a
+        // server without one cannot append at all. The fixture owns the same
+        // pieces main() does: a queue, the log handle moved into the thread.
+        state.write_queue = &queue;
+        writer = std::thread(writer_loop, std::ref(queue), std::ref(state),
+                             open_append(path));
 
         install_routes(srv, state);
 
@@ -59,9 +71,16 @@ struct TestServer {
         srv.wait_until_ready();
     }
 
+    /// Torn down in the same order main() uses: stop taking requests first, so
+    /// no handler is left waiting on a future the writer will never fulfil,
+    /// then close the queue and let the writer drain and exit.
     ~TestServer() {
         srv.stop();
-        thread.join();
+        if (thread.joinable()) thread.join();
+        queue.close();  // idempotent
+        // joinable(), because a case may have shut the writer down itself to
+        // exercise what the API does once the write path is closed.
+        if (writer.joinable()) writer.join();
         std::filesystem::remove_all(dir);
     }
 
@@ -298,4 +317,105 @@ TEST_CASE("an unknown route is a 404, not a crash") {
 
     REQUIRE(res);
     CHECK(res->status == 404);
+}
+
+// ---------------------------------------------------------------------------
+// The write path now runs through the writer thread (IOT-26)
+// ---------------------------------------------------------------------------
+
+TEST_CASE("concurrent POSTs each get their own block and the chain stays valid") {
+    TestServer ts("concurrent_post");
+    constexpr int kClients = 6;
+    constexpr int kEach = 5;
+
+    // Results are collected here and asserted on the main thread afterwards.
+    // doctest's assertion macros are not safe to call from several threads at
+    // once, and a failure inside a client thread would be reported against
+    // whichever case happened to be running.
+    std::mutex results_mtx;
+    std::vector<int> statuses;
+    std::vector<std::uint64_t> indices;
+
+    std::vector<std::thread> clients;
+    for (int c = 0; c < kClients; ++c) {
+        clients.emplace_back([&, c] {
+            httplib::Client cli("127.0.0.1", ts.port);
+            for (int i = 0; i < kEach; ++i) {
+                auto res = cli.Post("/events", event_json("c" + std::to_string(c)),
+                                    "application/json");
+                std::lock_guard g(results_mtx);
+                if (!res) {
+                    statuses.push_back(-1);
+                    continue;
+                }
+                statuses.push_back(res->status);
+                if (res->status == 201) {
+                    indices.push_back(body_of(res)["index"].get<std::uint64_t>());
+                }
+            }
+        });
+    }
+    for (auto& t : clients) t.join();
+
+    REQUIRE(statuses.size() == kClients * kEach);
+    for (int status : statuses) CHECK(status == 201);
+
+    // The point of the single writer: no two requests may be handed the same
+    // slot in the chain, however they interleave.
+    REQUIRE(indices.size() == kClients * kEach);
+    std::sort(indices.begin(), indices.end());
+    CHECK(std::adjacent_find(indices.begin(), indices.end()) == indices.end());
+    CHECK(indices.front() == 1);  // 0 is genesis
+    CHECK(indices.back() == kClients * kEach);
+
+    // And the ledger the server reports must still be internally consistent.
+    auto verify = ts.client().Get("/verify");
+    REQUIRE(verify);
+    CHECK(verify->status == 200);
+    CHECK(body_of(verify)["valid"] == true);
+    CHECK(body_of(verify)["chain_length"] == kClients * kEach + 1);
+}
+
+TEST_CASE("POST /events is a 500 when no writer thread is attached") {
+    // A server whose write_queue was never set. This is a wiring mistake rather
+    // than something a client can provoke, but it must fail loudly instead of
+    // answering 201 for an event that was never written anywhere.
+    AppState state;  // write_queue stays null
+    httplib::Server srv;
+    install_routes(srv, state);
+
+    const int port = srv.bind_to_any_port("127.0.0.1");
+    std::thread thread([&] { srv.listen_after_bind(); });
+    srv.wait_until_ready();
+
+    httplib::Client cli("127.0.0.1", port);
+    auto res = cli.Post("/events", event_json("nowhere to go"), "application/json");
+
+    REQUIRE(res);
+    CHECK(res->status == 500);
+    CHECK(body_of(res)["error"] == "writer unavailable");
+
+    srv.stop();
+    thread.join();
+}
+
+TEST_CASE("a closed queue makes POST /events fail instead of hanging") {
+    TestServer ts("closed_queue");
+
+    // Shutdown has begun: the writer has drained and exited, but the HTTP
+    // server is still accepting. push() refuses, and the handler must turn that
+    // into a response rather than blocking on a promise nobody owns.
+    ts.queue.close();
+    ts.writer.join();
+
+    auto res = ts.client().Post("/events", event_json("too late"),
+                                "application/json");
+    REQUIRE(res);
+    CHECK(res->status == 500);
+
+    // Reads still work — a closed write path does not take the whole API down.
+    auto blocks = ts.client().Get("/blocks");
+    REQUIRE(blocks);
+    CHECK(blocks->status == 200);
+    CHECK(body_of(blocks)["chain_length"] == 1);
 }
