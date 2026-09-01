@@ -1,5 +1,4 @@
 #pragma once
-#include <fstream>
 #include <shared_mutex>
 
 #include <chain.hpp>
@@ -16,21 +15,25 @@ namespace ledger {
 
 /// State shared by every request handler.
 ///
-/// One mutex guards both the chain and the log handle, because appending an
-/// event touches both and they must not drift apart. Reads (GET) take a shared
-/// lock so they can run concurrently; a write (POST) takes a unique lock.
+/// The mutex guards the chain. Readers (GET) take a shared lock and run
+/// concurrently; the writer thread is the only holder of the unique lock, and
+/// holds it only long enough to push one block.
+///
+/// There is deliberately no log handle here. The writer thread owns it for its
+/// whole lifetime (IOT-25), which is what makes "exactly one thread ever writes
+/// the ledger file" a property of the types rather than a rule to remember —
+/// a handler cannot append to the file because it has nothing to append to.
 ///
 /// Not copyable or movable — std::shared_mutex is neither. Construct it once in
 /// main() and pass it around by reference.
 struct AppState {
     Chain chain;
     std::shared_mutex mtx;
-    std::ofstream log;  // append handle for the ledger file
 
-    /// The writer thread's queue, once one exists (IOT-24). A pointer rather
-    /// than a reference so AppState can still be constructed without a queue —
-    /// POST /events keeps its unique_lock until IOT-26 moves it across, and the
-    /// existing tests construct AppState directly. Null means "no writer thread".
+    /// The writer thread's queue. A pointer rather than a reference so AppState
+    /// stays default-constructible for tests that only exercise read routes.
+    /// Null means "no writer attached", and POST /events answers 500 rather
+    /// than pretending to have written something.
     WriteQueue* write_queue = nullptr;
 };
 

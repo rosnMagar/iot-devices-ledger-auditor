@@ -4,12 +4,15 @@
 #include <iostream>
 #include <string>
 #include <system_error>
+#include <thread>
+#include <utility>
 
 #include "chain.hpp"
 #include "config.hpp"
 #include "log.hpp"
 #include "server.hpp"
 #include "storage.hpp"
+#include "writer.hpp"
 
 namespace {
 
@@ -29,22 +32,42 @@ int run() {
     const auto size = std::filesystem::file_size(config.ledger_path, ec);
     const bool fresh = static_cast<bool>(ec) || size == 0;
 
-    // Reload existing ledger state (or seed genesis on a fresh boot) and keep the
-    // append handle open for as long as the server runs.
-    ledger::AppState state{ledger::load_chain(config.ledger_path),
-                           {},
-                           ledger::open_append(config.ledger_path)};
+    // Reload existing ledger state (or seed genesis on a fresh boot).
+    ledger::AppState state;
+    state.chain = ledger::load_chain(config.ledger_path);
+
+    // The append handle is a local, not part of AppState: it is about to be
+    // moved into the writer thread, which owns it from then on.
+    std::ofstream log = ledger::open_append(config.ledger_path);
 
     if (fresh) {
         // Persist the genesis that load_chain seeded in-memory, so the first
-        // read after boot is consistent with disk.
-        ledger::append_block(state.log, state.chain.latest());
+        // read after boot is consistent with disk. Safe to do on this thread —
+        // the writer has not started yet, so there is still only one writer.
+        ledger::append_block(log, state.chain.latest());
     }
 
     ledger::log::info("loaded chain length " + std::to_string(state.chain.size()) +
                       " from " + config.ledger_path);
 
-    return ledger::serve(state, config) ? 0 : 1;
+    // One writer thread for the process lifetime. Every POST /events goes
+    // through this queue; nothing else may touch the ledger file.
+    ledger::WriteQueue queue;
+    state.write_queue = &queue;
+    std::thread writer(ledger::writer_loop, std::ref(queue), std::ref(state),
+                       std::move(log));
+
+    const bool ok = ledger::serve(state, config);
+
+    // Shut down in order: stop accepting work, let the writer drain what was
+    // already accepted, then join. Closing first is what makes pop() return
+    // nullopt and the loop exit — joining without it would hang forever.
+    ledger::log::info("shutting down: closing the write queue");
+    queue.close();
+    writer.join();
+    ledger::log::info("writer thread joined");
+
+    return ok ? 0 : 1;
 }
 
 }  // namespace

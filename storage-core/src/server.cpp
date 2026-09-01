@@ -4,6 +4,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <exception>
+#include <future>
 #include <limits>
 #include <mutex>
 #include <shared_mutex>
@@ -19,6 +20,7 @@
 #include <error.hpp>
 #include <log.hpp>
 #include <storage.hpp>
+#include <writer.hpp>
 
 namespace ledger {
 
@@ -83,38 +85,46 @@ EventPayload parse_event(const std::string& body) {
 
 /// POST /events — append one event to the ledger.
 ///
-/// The whole append is one critical section: the block must land in the chain
-/// and on disk before any other request can observe either, or a concurrent
-/// write would chain onto a block that is not yet persisted.
+/// The handler does no writing itself. It hands the event to the writer thread
+/// and blocks on a future for the resulting block, so every append goes through
+/// one owner and the chain can never be extended by two threads at once.
+///
+/// Blocking a handler thread is fine here: cpp-httplib runs one thread per
+/// connection. When the queue is full that block *is* the backpressure — the
+/// alternative is accepting events faster than the disk can take them.
 void install_events(httplib::Server& srv, AppState& state) {
     srv.Post("/events", [&state](const httplib::Request& req,
                                  httplib::Response& res) {
+        // Validation stays here and stays first, so bad input never occupies a
+        // queue slot behind well-formed events.
         EventPayload event = parse_event(req.body);
         if (event.event_type.empty()) {
             throw ApiError{400, "event_type must not be empty"};
         }
 
-        Block created{};
-        {
-            std::unique_lock lock(state.mtx);
-            // append() returns a reference into the chain's vector; copy it out
-            // so the response does not depend on the lock still being held.
-            created = state.chain.append(std::move(event));
-
-            try {
-                append_block(state.log, created);
-            } catch (const StorageError& e) {
-                // The block is in memory but not on disk. Drop it — otherwise
-                // every later block would chain onto something a restart will
-                // never see, and the ledger would fail verification on reload.
-                std::vector<Block> kept = state.chain.blocks();
-                kept.pop_back();
-                state.chain = Chain::load(std::move(kept));
-
-                log::error("failed to persist block: " + std::string(e.what()));
-                throw ApiError{500, "failed to persist event"};
-            }
+        if (state.write_queue == nullptr) {
+            log::error("POST /events with no writer thread attached");
+            throw ApiError{500, "writer unavailable"};
         }
+
+        WriteRequest request{std::move(event), std::promise<Block>{}};
+
+        // Take the future BEFORE pushing. Once the request is on the queue the
+        // writer may consume, fulfil and destroy it at any moment, so reaching
+        // back into `request` afterwards is a use-after-move race.
+        std::future<Block> result = request.respond_to.get_future();
+
+        if (!state.write_queue->push(std::move(request))) {
+            // Refused, which today only happens once the queue is closed during
+            // shutdown. push() did not take ownership, so nothing is left
+            // hanging on a promise no one will ever fulfil.
+            throw ApiError{500, "server is shutting down"};
+        }
+
+        // Re-throws whatever the writer set. A StorageError is deliberately not
+        // caught here: to_error_response maps it to a 500 already, and the
+        // writer has logged the underlying cause.
+        const Block created = result.get();
 
         res.status = 201;
         res.set_content(nlohmann::json(created).dump(), "application/json");
