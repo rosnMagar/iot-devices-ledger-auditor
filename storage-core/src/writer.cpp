@@ -1,6 +1,14 @@
 #include <writer.hpp>
 
+#include <exception>
+#include <mutex>
+#include <shared_mutex>
+#include <string>
 #include <utility>
+
+#include <log.hpp>
+#include <server.hpp>
+#include <storage.hpp>
 
 namespace ledger {
 
@@ -61,6 +69,70 @@ bool WriteQueue::is_closed() const {
 std::size_t WriteQueue::size() const {
     std::lock_guard lock(mtx_);
     return queue_.size();
+}
+
+namespace {
+
+/// Hash the next block from the current tail. Takes a shared lock only to read
+/// the tail: the writer thread is the sole mutator, so nothing can move it
+/// underneath, and other readers run concurrently.
+Block build_next(AppState& state, EventPayload event) {
+    std::shared_lock lock(state.mtx);
+    return make_block(state.chain.size(), std::move(event),
+                      state.chain.latest().hash);
+}
+
+}  // namespace
+
+void writer_loop(WriteQueue& queue, AppState& state, std::ofstream log) {
+    log::info("writer thread started");
+
+    try {
+        while (auto request = queue.pop()) {
+            // Move the promise out first, so it is fulfilled exactly once no
+            // matter which branch below runs.
+            std::promise<Block> respond_to = std::move(request->respond_to);
+
+            try {
+                Block created = build_next(state, std::move(request->event));
+
+                // Persist BEFORE publishing. If this throws, the block was never
+                // in the chain, so there is nothing to roll back — unlike the
+                // handler in IOT-21, which appends first and has to undo it.
+                append_block(log, created);
+
+                Block reply;
+                {
+                    std::unique_lock lock(state.mtx);
+                    reply = state.chain.push_persisted(std::move(created));
+                }
+
+                respond_to.set_value(std::move(reply));
+            } catch (const StorageError& e) {
+                log::error("failed to persist block: " + std::string(e.what()));
+                // Hand the failure to the waiting handler, which maps it to a
+                // 500. Rethrowing here would kill the thread and strand every
+                // later request.
+                try {
+                    respond_to.set_exception(std::current_exception());
+                } catch (...) {
+                }
+            } catch (...) {
+                log::error("writer: unexpected error handling a write request");
+                try {
+                    respond_to.set_exception(std::current_exception());
+                } catch (...) {
+                }
+            }
+        }
+    } catch (const std::exception& e) {
+        // Only reachable if the queue itself fails. Nothing left to reply on.
+        log::error("writer thread aborting: " + std::string(e.what()));
+    } catch (...) {
+        log::error("writer thread aborting on an unknown error");
+    }
+
+    log::info("writer thread stopped");
 }
 
 }  // namespace ledger
