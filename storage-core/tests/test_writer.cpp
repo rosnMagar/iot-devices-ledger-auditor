@@ -209,6 +209,7 @@ TEST_CASE("many producers and one consumer lose nothing") {
 #include <shared_mutex>
 #include <string>
 
+#include "broadcast.hpp"
 #include "server.hpp"
 #include "storage.hpp"
 
@@ -224,6 +225,7 @@ struct WriterFixture {
     std::filesystem::path dir;
     AppState state;
     WriteQueue queue;
+    Broadcaster broadcaster;
     std::thread thread;
 
     explicit WriterFixture(const std::string& tag, bool working = true,
@@ -233,6 +235,8 @@ struct WriterFixture {
         std::filesystem::remove_all(dir);
         std::filesystem::create_directories(dir);
         state.chain = load_chain(path());
+
+        state.broadcaster = &broadcaster;
 
         std::ofstream log = open_append(path());
         if (!working) log.close();
@@ -390,4 +394,67 @@ TEST_CASE("close() ends the loop so the thread can be joined") {
     w.queue.close();
     w.thread.join();
     CHECK_FALSE(w.thread.joinable());
+}
+
+TEST_CASE("writer_loop publishes each appended block to the live feed") {
+    WriterFixture w("publish");
+    auto sub = w.broadcaster.subscribe();
+
+    auto fut = w.submit("alice");
+    REQUIRE(fut.wait_for(2s) == std::future_status::ready);
+    const Block replied = fut.get();
+
+    auto item = sub->next();
+    REQUIRE(item.has_value());
+    CHECK(item->lagged == 0);
+
+    // The subscriber must be told about exactly the block the caller got back,
+    // not a re-derived one.
+    CHECK(item->block.index == replied.index);
+    CHECK(item->block.hash == replied.hash);
+    CHECK(item->block.event.actor == "alice");
+}
+
+TEST_CASE("a block that failed to persist is never published") {
+    WriterFixture w("no_publish_on_failure", /*working=*/false);
+    auto sub = w.broadcaster.subscribe();
+
+    auto fut = w.submit("alice");
+    REQUIRE(fut.wait_for(2s) == std::future_status::ready);
+    CHECK_THROWS_AS(fut.get(), StorageError);
+
+    // Publishing a block that is not on disk would show subscribers something a
+    // restart would erase.
+    CHECK(sub->buffered() == 0);
+    CHECK_FALSE(sub->try_next().has_value());
+}
+
+TEST_CASE("a writer with no broadcaster attached still appends") {
+    WriterFixture w("no_broadcaster");
+    w.state.broadcaster = nullptr;  // nothing listening
+
+    auto fut = w.submit("alice");
+    REQUIRE(fut.wait_for(2s) == std::future_status::ready);
+    CHECK(fut.get().index == 1);
+    CHECK(w.chain_size() == 2);
+}
+
+TEST_CASE("a stalled subscriber does not stop the writer from accepting writes") {
+    WriterFixture w("slow_subscriber");
+    auto stalled = w.broadcaster.subscribe(4);  // never drained
+
+    // Well past the subscriber's capacity: if publish() waited for room, the
+    // writer thread would wedge and these futures would never resolve.
+    std::vector<std::future<Block>> futures;
+    for (int i = 0; i < 50; ++i) futures.push_back(w.submit("a"));
+
+    for (auto& f : futures) REQUIRE(f.wait_for(5s) == std::future_status::ready);
+    for (std::size_t i = 0; i < futures.size(); ++i) {
+        CHECK(futures[i].get().index == i + 1);
+    }
+
+    CHECK(w.chain_size() == 51);
+    CHECK(w.lines_on_disk() == 50);
+    CHECK(stalled->buffered() == 4);
+    CHECK(stalled->pending_lag() == 46);
 }
