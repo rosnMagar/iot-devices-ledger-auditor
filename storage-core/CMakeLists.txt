@@ -78,4 +78,13 @@ if(STORAGE_CORE_BUILD_TESTS)
     target_link_libraries(test-ws PRIVATE OpenSSL::Crypto Threads::Threads ixwebsocket)
 
     add_test(NAME ws-integration-tests COMMAND test-ws)
+
+    # IOT-29 capstone: the whole service in one process — REST, writer thread,
+    # broadcaster and WebSocket listener together.
+    add_executable(test-pipeline tests/test_pipeline.cpp src/server.cpp src/chain.cpp
+                   src/storage.cpp src/writer.cpp src/broadcast.cpp src/ws.cpp)
+    target_include_directories(test-pipeline PRIVATE include third_party)
+    target_link_libraries(test-pipeline PRIVATE OpenSSL::Crypto Threads::Threads ixwebsocket)
+
+    add_test(NAME pipeline-integration-tests COMMAND test-pipeline)
 endif()
