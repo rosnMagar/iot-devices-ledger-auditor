@@ -21,7 +21,7 @@ target_link_libraries(ixwebsocket PUBLIC Threads::Threads)
 # Upstream's own warnings are not our problem and would drown ours.
 target_compile_options(ixwebsocket PRIVATE -w)
 
-add_executable(storage-core src/main.cpp src/chain.cpp src/storage.cpp src/server.cpp src/writer.cpp src/broadcast.cpp)
+add_executable(storage-core src/main.cpp src/chain.cpp src/storage.cpp src/server.cpp src/writer.cpp src/broadcast.cpp src/ws.cpp)
 target_include_directories(storage-core PRIVATE include third_party)
 target_link_libraries(storage-core PRIVATE OpenSSL::Crypto Threads::Threads ixwebsocket)
 
@@ -70,4 +70,12 @@ if(STORAGE_CORE_BUILD_TESTS)
     target_link_libraries(test-broadcast PRIVATE OpenSSL::Crypto Threads::Threads)
 
     add_test(NAME broadcast-unit-tests COMMAND test-broadcast)
+
+    # Drives a real WebSocket client against a real listener, so it needs the
+    # vendored library on both sides.
+    add_executable(test-ws tests/test_ws.cpp src/ws.cpp src/broadcast.cpp src/chain.cpp)
+    target_include_directories(test-ws PRIVATE include third_party)
+    target_link_libraries(test-ws PRIVATE OpenSSL::Crypto Threads::Threads ixwebsocket)
+
+    add_test(NAME ws-integration-tests COMMAND test-ws)
 endif()

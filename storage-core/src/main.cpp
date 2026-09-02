@@ -13,6 +13,7 @@
 #include "log.hpp"
 #include "server.hpp"
 #include "storage.hpp"
+#include "ws.hpp"
 #include "writer.hpp"
 
 namespace {
@@ -65,11 +66,30 @@ int run() {
     std::thread writer(ledger::writer_loop, std::ref(queue), std::ref(state),
                        std::move(log));
 
+    // The live feed, on its own port (ADR 0008). A bind failure here is fatal:
+    // starting with the REST API up and the feed silently missing is exactly the
+    // kind of half-working deploy that IOT-49/51/52 were about.
+    ledger::WsServer ws(broadcaster, config.ws_host, config.ws_port);
+    if (!ws.start()) {
+        ledger::log::error("failed to bind websocket listener on " +
+                           config.ws_host + ":" + std::to_string(config.ws_port));
+        queue.close();
+        writer.join();
+        return 1;
+    }
+    ledger::log::info("websocket listening on " + config.ws_host + ":" +
+                      std::to_string(config.ws_port) + "/blocks");
+
     const bool ok = ledger::serve(state, config);
 
     // Shut down in order: stop accepting work, let the writer drain what was
     // already accepted, then join. Closing first is what makes pop() return
     // nullopt and the loop exit — joining without it would hang forever.
+    // Stop accepting connections before touching the write path, so no client
+    // is left holding a subscription that is about to be closed underneath it.
+    ledger::log::info("shutting down: stopping the websocket listener");
+    ws.stop();
+
     ledger::log::info("shutting down: closing the write queue");
     queue.close();
     writer.join();
