@@ -17,7 +17,7 @@ CMake project. Public headers in `include/`, sources in `src/`, vendored header-
 | `include/storage.hpp` + `src/storage.cpp` | NDJSON append-only file I/O: `append_block`, `load_chain` |
 | `include/writer.hpp` + `src/writer.cpp` | Single-writer thread: owns chain + file handle, drains a queue, persists, broadcasts |
 | `include/api.hpp` + `src/api.cpp` | HTTP router + handlers |
-| `include/ws.hpp` + `src/ws.cpp` | `/ws/blocks` WebSocket handler |
+| `include/ws.hpp` + `src/ws.cpp` | WebSocket feed listener — `ws://<host>:8081/blocks` |
 | `include/error.hpp` | error → HTTP response mapping |
 | `src/main.cpp` | Config, spawn writer thread, start server |
 
@@ -69,7 +69,7 @@ flowchart TD
         WT -->|"push under shared_mutex"| VEC["std::vector<Block>"]
         WT -->|"set_value()"| PROMISE["std::promise -> 201 response"]
         WT -->|"publish Block"| SUBS["subscriber list"]
-        SUBS --> WS["/ws/blocks handler(s)"]
+        SUBS --> WS["WS listener :8081 /blocks"]
     end
     subgraph Reads["Read path"]
         G1["GET /blocks"] -->|"shared_lock"| VEC
@@ -87,7 +87,7 @@ A single writer thread owns the `Chain` and the file handle, so appends are seri
 | `POST /events` | Append a new event → returns the resulting `Block` |
 | `GET /blocks?from=&to=` | Inclusive index range of blocks + `chain_length` |
 | `GET /verify` | Recompute hashes, check chain integrity |
-| `GET /ws/blocks` | WebSocket stream of newly appended blocks |
+| `ws://<host>:8081/blocks` | WebSocket stream of newly appended blocks. **A second listener, not a path on `:8080`** — cpp-httplib and IXWebSocket cannot share a socket (ADR 0008). Frames are blocks serialised exactly as `GET /blocks` serialises them; a `{"type":"lagged","dropped":N}` frame precedes the block after any gap. |
 
 ## Config (env vars)
 

@@ -22,7 +22,13 @@ done.
 - [x] Weekend 1 — Core data model (`block.hpp`, `chain.hpp`, SHA-256 hashing, unit tests) — IOT-9…13
 - [x] Weekend 2 — Persistence (NDJSON append/load, reload-on-startup, tamper-detection test) — IOT-14…17
 - [x] Weekend 3 — REST API (HTTP router, `Chain` behind a `std::shared_mutex`, error handling, integration tests) — IOT-18…23
-- [ ] Weekend 4 — Ring buffer + WebSocket (producer/consumer queue + writer thread, `/ws/blocks`, capstone integration test) — IOT-24…29, IOT-44, IOT-45
+- [x] Weekend 4 — Ring buffer + WebSocket (producer/consumer queue + writer thread, `/ws/blocks`, capstone integration test) — IOT-24…29, IOT-44, IOT-45
+
+Phase 1 is complete. The live feed is `ws://<host>:8081/blocks`, not a path on
+8080 — cpp-httplib and IXWebSocket cannot share a listening socket (ADR 0008).
+Outstanding follow-ups, neither blocking Phase 1.5: IOT-54 (graceful shutdown on
+SIGTERM — the ordered shutdown in `main()` exists but only runs on a bind
+failure) and the `docker compose up --build` box in Phase 0.
 
 ## Phase 1.5 — IoT Firmware PoC (~1 weekend)
 
@@ -33,7 +39,7 @@ done.
 
 - [ ] Real FastAPI app: SQLite via SQLAlchemy for `users`, `locations`, `settings`, `devices`
 - [ ] Real proxy of storage-core `/events` and `/blocks`
-- [ ] WebSocket relay from storage-core `/ws/blocks` to frontend
+- [ ] WebSocket relay from storage-core `ws://<host>:8081/blocks` to frontend
 - [ ] `docs/backend-api.md` and `docs/db-schema.md` filled in
 
 ## Phase 3 — frontend (~2-3 weekends)

@@ -6,7 +6,7 @@ This is a living document — updated at the end of every phase to reflect what'
 
 | Component | Stack | Responsibility |
 |---|---|---|
-| `storage-core` | C++ (CMake) | Hash-chained append-only ledger; REST + WebSocket API |
+| `storage-core` | C++ (CMake) | Hash-chained append-only ledger; REST on `:8080`, WebSocket feed on `:8081` |
 | `backend-api` | Python, FastAPI | Users/locations/settings/devices DB; proxies storage-core; relays live events to frontend |
 | `frontend` | React, Vite, TS | Dashboard with live event feed |
 | `auditor` | TypeScript, AWS Lambda | Event-driven anomaly auditor; pulls recent blocks, calls an LLM, drafts incident reports |
@@ -25,9 +25,11 @@ flowchart LR
     subgraph EC2["EC2 t4g.micro (docker-compose)"]
         FE["frontend\n(nginx, :80)"]
         BE["backend-api\n(FastAPI, :8000)"]
-        SC["storage-core\n(C++, :8080)"]
+        SC["storage-core\n(C++, REST :8080)"]
+        WS["storage-core WS listener\n(:8081, same process)"]
         FE -->|"GET /blocks, /users"| BE
         BE -->|"GET /blocks (httpx)"| SC
+        SC -.->|"new block"| WS
     end
 
     LAMBDA["auditor Lambda\n(TS, SAM)"]
@@ -45,6 +47,14 @@ flowchart LR
 ```
 
 Every arrow above is a real network call/deploy step from Phase 0 onward, even while most payloads are stubbed. The ESP32 arrow is documented now but implemented in Phase 1.5.
+
+**The WebSocket feed is a second listener, not a path on `:8080`** (IOT-28). It
+runs in the same process and serves `ws://<host>:8081/blocks`; cpp-httplib and
+IXWebSocket each own a listening socket and cannot share one. The dashed arrow is
+in-process — the writer thread publishing to the broadcaster — not a network
+call. See [`decisions/0008-vendored-websocket-second-listener.md`](decisions/0008-vendored-websocket-second-listener.md).
+Nothing consumes it yet: the backend-api relay is Phase 2 and the frontend
+dashboard is Phase 3.
 
 ## Status by component
 

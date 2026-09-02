@@ -8,7 +8,7 @@ Phase 0: stub page fetching backend-api's `/blocks` and `/users` and rendering t
 
 - React, Vite, TypeScript
 - Multi-stage Dockerfile, served via nginx
-- Live event feed via WebSocket (backend-api relay of storage-core's `/ws/blocks`)
+- Live event feed via WebSocket (backend-api relay of storage-core's `ws://<host>:8081/blocks`)
 
 ## Open Questions
 
