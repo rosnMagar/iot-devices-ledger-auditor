@@ -1,31 +1,11 @@
-"""Relational models for backend-api.
-
-## Where the source of truth lives
-
-These tables are a **registry**, not a record of what happened. Events are the
-ledger's job: storage-core owns an append-only hash chain and nothing here may
-contradict it. So `devices` and `locations` describe what *is registered*, while
-anything about what a device *did* — last seen, reading counts, activity — is
-derived by reading the ledger (IOT-35).
-
-## Why the primary keys are strings
-
-`locations.id` and `devices.device_id` are natural string keys that match the
-ledger verbatim. A `SENSOR_READING` block carries `location_id` and `actor` as
-strings the firmware reads from its `secrets.h` (see `docs/firmware.md`), so
-using the same values here makes correlating a registry row to ledger events a
-direct key match with no translation table.
-
-The alternative — integer surrogate keys plus a unique slug — is the more
-conventional relational shape and would let a location be renamed without
-touching firmware. It was rejected because the ledger is immutable: historical
-blocks can never be rewritten to point at a new key, so the mapping layer would
-have to exist forever and buy nothing.
-
-The cost is real and worth stating: renaming a location means re-flashing the
-devices that report to it, and a typo in `secrets.h` produces events that match
-no registered location. IOT-35 has to decide what to do with those orphans.
-"""
+# A registry, not a record of events — storage-core's chain is the source of
+# truth for what happened. Activity (last_seen, active) is derived, not stored.
+#
+# locations.id and devices.device_id are natural string keys matching the
+# ledger's location_id/actor verbatim, so correlation needs no mapping table.
+# Surrogate keys were rejected: the ledger is immutable, so old blocks could
+# never be repointed and the mapping would live forever. Cost: renaming a
+# location means re-flashing its devices.
 
 from datetime import datetime, timezone
 
@@ -36,25 +16,12 @@ from app.db import Base, UtcDateTime
 
 
 def _utcnow() -> datetime:
-    """Timezone-aware UTC now.
-
-    ``datetime.utcnow`` is deprecated in 3.12 and returns a *naive* datetime,
-    which compares as if it were local time and silently misorders rows once
-    anything crosses a timezone. Everything stored here is UTC and says so.
-    """
     return datetime.now(timezone.utc)
 
 
 class User(Base):
-    """An operator of the dashboard.
-
-    **No authentication is implemented yet.** ``password_hash`` exists because
-    the schema sketch called for it, but nothing writes or checks it, and no
-    endpoint authenticates. The auth ticket must pick a real KDF (argon2 or
-    bcrypt) and store only its output — never a plaintext password, and never a
-    bare SHA of one.
-    """
-
+    # No auth yet: password_hash is unused. Whoever adds auth must use a real
+    # KDF (argon2/bcrypt) — never plaintext, never a bare SHA.
     __tablename__ = "users"
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -68,11 +35,6 @@ class User(Base):
 
 
 class Location(Base):
-    """A physical place devices report from.
-
-    ``id`` is the same string the firmware puts in a block's ``location_id``.
-    """
-
     __tablename__ = "locations"
 
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
@@ -88,14 +50,8 @@ class Location(Base):
 
 
 class Setting(Base):
-    """App-wide key/value configuration — alert thresholds and the like.
-
-    Global rather than per-location, which resolves the open question in
-    ``docs/db-schema.md`` for now. Per-location overrides would mean a nullable
-    ``location_id`` and a lookup that falls back to the global row; that is
-    easy to add later and pointless to build before something needs it.
-    """
-
+    # App-wide, not per-location. Per-location overrides can be added when
+    # something needs them.
     __tablename__ = "settings"
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -110,18 +66,9 @@ class Setting(Base):
 
 
 class Device(Base):
-    """A registered IoT device.
-
-    ``device_id`` is the same string the firmware sends as a block's ``actor``.
-    Registration here is what makes a device *known*; it says nothing about
-    whether it is currently reporting. "Active" is derived from ledger activity
-    in IOT-35 and deliberately is not a column — a stored flag would need
-    something to keep it true, and would drift the moment that failed.
-
-    ``location_id`` is nullable so a device can be registered before its
-    placement is decided. It is indexed because IOT-36 filters on it.
-    """
-
+    # No last_seen/active column on purpose — see the module comment.
+    # location_id is nullable so a device can be registered before placement,
+    # and indexed because IOT-36 filters on it.
     __tablename__ = "devices"
 
     device_id: Mapped[str] = mapped_column(String(64), primary_key=True)
