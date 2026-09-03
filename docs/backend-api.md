@@ -9,7 +9,7 @@ Phase 0: stub only (`GET /health`, `GET /blocks` proxies storage-core via `httpx
 - Python, FastAPI
 - SQLite via SQLAlchemy for `users`, `locations`, `settings`, `devices` (see [`db-schema.md`](db-schema.md)); documented Postgres migration path
 - Proxies storage-core's `/events` and `/blocks`
-- WebSocket relay from storage-core's `/ws/blocks` to the frontend
+- WebSocket relay from storage-core's `ws://<host>:8081/blocks` to the frontend
 - CORS enabled for the frontend origin (`CORS_ORIGINS` env var)
 
 ## Open Questions

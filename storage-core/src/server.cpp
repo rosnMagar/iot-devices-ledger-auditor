@@ -255,7 +255,30 @@ void install_routes(httplib::Server& srv, AppState& state) {
     install_verify(srv, state);
 }
 
-bool serve(AppState& state, const Config& config) {
+void ServerHandle::stop() {
+    std::lock_guard lock(mtx_);
+    stopped_ = true;
+    // Null when serve() has not started yet, or has already returned. Recording
+    // stopped_ is what makes the first case safe — attach() checks it.
+    if (srv_ != nullptr) srv_->stop();
+}
+
+bool ServerHandle::attach(httplib::Server* srv) {
+    std::lock_guard lock(mtx_);
+    if (stopped_) return true;  // stop() beat us here; do not start listening
+    srv_ = srv;
+    return false;
+}
+
+void ServerHandle::detach() {
+    std::lock_guard lock(mtx_);
+    // Cleared under the lock before the Server is destroyed, so a concurrent
+    // stop() either runs fully before this or sees null — never a dangling
+    // pointer.
+    srv_ = nullptr;
+}
+
+bool serve(AppState& state, const Config& config, ServerHandle* handle) {
     httplib::Server srv;
 
     // httplib defaults to SO_REUSEPORT on Linux, which lets a second instance
@@ -271,7 +294,19 @@ bool serve(AppState& state, const Config& config) {
     log::info("listening on " + config.bind_host + ":" +
               std::to_string(config.bind_port));
 
-    if (!srv.listen(config.bind_host, config.bind_port)) {
+    if (handle != nullptr && handle->attach(&srv)) {
+        // Asked to stop before we ever listened — a signal during startup.
+        log::info("stop requested before the server started listening");
+        return true;
+    }
+
+    const bool ok = srv.listen(config.bind_host, config.bind_port);
+
+    // Detach before srv goes out of scope, so a stop() arriving now cannot
+    // touch a destroyed Server.
+    if (handle != nullptr) handle->detach();
+
+    if (!ok) {
         log::error("failed to bind " + config.bind_host + ":" +
                    std::to_string(config.bind_port));
         return false;

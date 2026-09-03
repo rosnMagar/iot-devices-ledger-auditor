@@ -21,7 +21,7 @@ target_link_libraries(ixwebsocket PUBLIC Threads::Threads)
 # Upstream's own warnings are not our problem and would drown ours.
 target_compile_options(ixwebsocket PRIVATE -w)
 
-add_executable(storage-core src/main.cpp src/chain.cpp src/storage.cpp src/server.cpp src/writer.cpp src/broadcast.cpp src/ws.cpp)
+add_executable(storage-core src/main.cpp src/chain.cpp src/storage.cpp src/server.cpp src/writer.cpp src/broadcast.cpp src/ws.cpp src/signals.cpp)
 target_include_directories(storage-core PRIVATE include third_party)
 target_link_libraries(storage-core PRIVATE OpenSSL::Crypto Threads::Threads ixwebsocket)
 
@@ -78,4 +78,23 @@ if(STORAGE_CORE_BUILD_TESTS)
     target_link_libraries(test-ws PRIVATE OpenSSL::Crypto Threads::Threads ixwebsocket)
 
     add_test(NAME ws-integration-tests COMMAND test-ws)
+
+    # IOT-29 capstone: the whole service in one process — REST, writer thread,
+    # broadcaster and WebSocket listener together.
+    add_executable(test-pipeline tests/test_pipeline.cpp src/server.cpp src/chain.cpp
+                   src/storage.cpp src/writer.cpp src/broadcast.cpp src/ws.cpp)
+    target_include_directories(test-pipeline PRIVATE include third_party)
+    target_link_libraries(test-pipeline PRIVATE OpenSSL::Crypto Threads::Threads ixwebsocket)
+
+    add_test(NAME pipeline-integration-tests COMMAND test-pipeline)
+
+    # IOT-54: drives the real binary as a child process, because signal handling
+    # is process behaviour and cannot be exercised in-process.
+    add_executable(test-shutdown tests/test_shutdown.cpp)
+    target_include_directories(test-shutdown PRIVATE include third_party)
+    target_link_libraries(test-shutdown PRIVATE Threads::Threads)
+
+    add_test(NAME shutdown-tests COMMAND test-shutdown)
+    set_tests_properties(shutdown-tests PROPERTIES
+        ENVIRONMENT "STORAGE_CORE_BINARY=$<TARGET_FILE:storage-core>")
 endif()
