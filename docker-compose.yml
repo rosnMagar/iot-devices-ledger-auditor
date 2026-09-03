@@ -23,6 +23,12 @@ services:
       STORAGE_CORE_URL: ${STORAGE_CORE_URL:-http://storage-core:8080}
       DATABASE_URL: ${DATABASE_URL:-sqlite:////app/data/app.db}
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173}
+    volumes:
+      # DATABASE_URL points into /app/data. Without this the SQLite file lives
+      # in the container's writable layer and is destroyed on every redeploy —
+      # and before IOT-55 the directory did not exist at all, which crash-looped
+      # the container the moment IOT-34 gave it a reason to open the database.
+      - backend-data:/app/data
     depends_on:
       - storage-core
     restart: unless-stopped
@@ -41,3 +47,4 @@ services:
 
 volumes:
   ledger-data:
+  backend-data:

@@ -7,8 +7,10 @@ Postgres move is a URL change plus a migration tool — see ``docs/db-schema.md`
 import os
 from collections.abc import Iterator
 from datetime import datetime, timezone
+from pathlib import Path
 
 from sqlalchemy import DateTime, Engine, create_engine, event
+from sqlalchemy.engine import make_url
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 from sqlalchemy.types import TypeDecorator
 
@@ -103,6 +105,35 @@ def _enable_sqlite_foreign_keys(dbapi_connection, connection_record) -> None:
         cursor.close()
 
 
+def _ensure_sqlite_directory(url: str) -> None:
+    """Create the directory a SQLite file lives in, if it does not exist.
+
+    SQLite will not create missing parent directories: pointed at
+    ``/app/data/app.db`` with no ``/app/data``, it fails with the notably
+    unhelpful ``unable to open database file``. Raised from a startup hook that
+    becomes a crash loop under ``restart: unless-stopped``, with the real cause
+    buried in whichever restart you happen to read.
+
+    IOT-55: exactly that took production down. The container had no volume
+    mounted at ``/app/data``, and nothing had ever opened the database before
+    IOT-34 added models, so the misconfiguration sat there invisible.
+
+    Creating the directory here means the app comes up on any sane path rather
+    than depending on the image and the compose file agreeing about a directory
+    neither of them obviously owns.
+    """
+    parsed = make_url(url)
+    if not parsed.drivername.startswith("sqlite"):
+        return
+    # In-memory databases have no path, and ":memory:" is not a filename.
+    if not parsed.database or parsed.database == ":memory:":
+        return
+
+    parent = Path(parsed.database).parent
+    if parent and not parent.exists():
+        parent.mkdir(parents=True, exist_ok=True)
+
+
 def init_db() -> None:
     """Create any missing tables.
 
@@ -112,6 +143,8 @@ def init_db() -> None:
     shaped and the data is disposable; it is exactly why the Postgres move needs
     a real migration tool (see ``docs/db-schema.md``).
     """
+    _ensure_sqlite_directory(DATABASE_URL)
+
     # Imported for the side effect of registering the models on Base.metadata.
     # Without this, create_all() finds nothing when the caller has not already
     # imported app.models.

@@ -187,3 +187,40 @@ def test_non_utc_input_is_normalised_to_utc(session: Session) -> None:
 
     read_back = session.get(Device, "esp32-offset").registered_at
     assert read_back == datetime(2026, 1, 1, 10, 0, 0, tzinfo=timezone.utc)
+
+
+def test_init_db_creates_a_missing_sqlite_directory(tmp_path, monkeypatch) -> None:
+    """IOT-55 regression.
+
+    SQLite does not create missing parent directories — pointed at a path whose
+    directory does not exist it fails with "unable to open database file". From
+    a startup hook under `restart: unless-stopped` that is a crash loop, which
+    is how this took production down.
+    """
+    import app.db as db_module
+
+    missing = tmp_path / "does" / "not" / "exist"
+    assert not missing.exists()
+
+    url = f"sqlite:///{missing / 'app.db'}"
+    engine = create_engine(url)
+    monkeypatch.setattr(db_module, "DATABASE_URL", url)
+    monkeypatch.setattr(db_module, "engine", engine)
+
+    db_module.init_db()
+
+    assert missing.is_dir()
+    assert {"users", "locations", "settings", "devices"} <= set(
+        inspect(engine).get_table_names()
+    )
+    engine.dispose()
+
+
+def test_ensure_sqlite_directory_ignores_memory_and_other_backends() -> None:
+    from app.db import _ensure_sqlite_directory
+
+    # Neither has a filesystem path; both must be no-ops rather than trying to
+    # mkdir something like ":memory:".
+    _ensure_sqlite_directory("sqlite://")
+    _ensure_sqlite_directory("sqlite:///:memory:")
+    _ensure_sqlite_directory("postgresql+psycopg://user:pw@host/db")
