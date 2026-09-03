@@ -9,6 +9,9 @@ storage-core/target/
 backend-api/__pycache__/
 backend-api/.venv/
 backend-api/data/*.db
+# DATABASE_URL defaults to ./app.db, so anything run from backend-api/ without
+# an explicit URL leaves one here.
+backend-api/*.db
 *.pyc
 
 # Node

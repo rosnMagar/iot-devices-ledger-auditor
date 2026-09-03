@@ -1,30 +1,29 @@
 import os
 from contextlib import asynccontextmanager
+from typing import Annotated
 
 import httpx
-from fastapi import FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy import select
+from sqlalchemy.orm import Session
 
-from app.db import init_db
+from app.activity import ACTIVE_WINDOW_SECONDS, LedgerActivity
+from app.db import get_session, init_db
+from app.models import Device
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Create any missing tables before the first request is served.
-
-    A lifespan handler rather than @app.on_event("startup"), which FastAPI
-    deprecates.
-
-    create_all is create-if-absent: it never alters an existing table, so a
-    changed column will not appear on a database that already has it. Fine while
-    the schema is still moving and the data is disposable — see
-    docs/db-schema.md for why the Postgres move needs Alembic instead.
-    """
+    # Lifespan, not @app.on_event("startup") — FastAPI deprecates that.
     init_db()
     yield
 
 
 app = FastAPI(title="backend-api (stub)", lifespan=lifespan)
+
+# One cache per process; safe to share across requests.
+ledger_activity = LedgerActivity()
 
 # Comma-separated list of allowed browser origins. The default is the Vite dev
 # server and is only ever right locally — in production this is set by the
@@ -63,12 +62,35 @@ async def blocks():
             raise HTTPException(status_code=502, detail=f"storage-core unreachable: {exc}")
 
 
+@app.get("/devices")
+async def devices(session: Annotated[Session, Depends(get_session)]):
+    # Registry from SQLite; status/last_seen derived from the ledger.
+    # ledger_reachable is surfaced so the UI can flag stale activity.
+    await ledger_activity.refresh()
+
+    rows = session.execute(select(Device).order_by(Device.device_id)).scalars().all()
+    return {
+        "devices": [
+            {
+                "device_id": device.device_id,
+                "location_id": device.location_id,
+                "device_type": device.device_type,
+                "registered_at": device.registered_at,
+                # null = never reported; a timestamp = went quiet.
+                "last_seen": ledger_activity.last_seen(device.device_id),
+                "status": ledger_activity.status(device.device_id),
+            }
+            for device in rows
+        ],
+        "active_window_seconds": ACTIVE_WINDOW_SECONDS,
+        "ledger_reachable": ledger_activity.reachable,
+    }
+
+
 @app.get("/users")
 async def users():
-    # Still a stub. IOT-34 added the models but deliberately did not switch this
-    # over: the users table starts empty, so a real query would return [] and
-    # blank the frontend that currently renders these two rows. The users
-    # endpoint moves across with the auth work, which is what will populate it.
+    # Still a stub: the users table starts empty, so a real query would blank
+    # the frontend. Moves across with the auth work that populates it.
     return [
         {"id": 1, "username": "operator-1", "role": "operator"},
         {"id": 2, "username": "admin", "role": "admin"},

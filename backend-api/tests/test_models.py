@@ -1,8 +1,4 @@
-"""IOT-34 — schema and constraint behaviour.
-
-Each test gets its own in-memory SQLite database, so nothing leaks between
-cases and no file is left behind.
-"""
+# IOT-34 — schema and constraint behaviour. Each test gets its own in-memory DB.
 
 from datetime import datetime, timezone
 
@@ -18,9 +14,7 @@ from app.models import Device, Location, Setting, User
 
 @pytest.fixture()
 def session() -> Session:
-    # StaticPool with a shared in-memory URL keeps every connection pointed at
-    # the same database. Without it each connection gets its own blank one and
-    # tables created on the first vanish from the second.
+    # StaticPool: without it each connection gets its own blank in-memory DB.
     engine = create_engine(
         "sqlite://",
         connect_args={"check_same_thread": False},
@@ -51,9 +45,7 @@ def test_device_registers_against_a_location(session: Session) -> None:
 
 
 def test_device_ids_match_the_ledgers_string_keys(session: Session) -> None:
-    # The whole point of the natural-key choice: these are the exact strings a
-    # block carries in `actor` and `location_id`, so correlating a registry row
-    # to ledger events needs no mapping table.
+    # These are the exact strings a block carries in actor/location_id.
     session.add(Location(id="loc-1", name="Warehouse A"))
     session.add(Device(device_id="esp32-01", location_id="loc-1", device_type="DHT22"))
     session.commit()
@@ -63,7 +55,6 @@ def test_device_ids_match_the_ledgers_string_keys(session: Session) -> None:
 
 
 def test_device_location_is_optional(session: Session) -> None:
-    # A device can be registered before anyone decides where it goes.
     session.add(Device(device_id="esp32-unplaced", device_type="DHT22"))
     session.commit()
 
@@ -73,8 +64,7 @@ def test_device_location_is_optional(session: Session) -> None:
 
 
 def test_device_cannot_reference_a_missing_location(session: Session) -> None:
-    # SQLite disables foreign keys by default; app.db turns them on via PRAGMA.
-    # If that listener regresses, this test is what notices.
+    # SQLite disables FKs by default; app.db turns them on. Guards that listener.
     session.add(Device(device_id="esp32-01", location_id="nope", device_type="DHT22"))
     with pytest.raises(IntegrityError):
         session.commit()
@@ -110,15 +100,13 @@ def test_user_defaults(session: Session) -> None:
 
     user = session.query(User).one()
     assert user.role == "operator"
-    # No auth yet — nothing writes this, and it must never hold a plaintext
-    # password once something does.
+    # No auth yet; must never hold a plaintext password.
     assert user.password_hash is None
     assert user.created_at is not None
 
 
 def test_timestamps_are_timezone_aware_utc(session: Session) -> None:
-    # Naive datetimes compare as local time and silently misorder rows once
-    # anything crosses a timezone, so the default must carry an offset.
+    # Naive datetimes misorder rows across timezones.
     session.add(Device(device_id="esp32-01", device_type="DHT22"))
     session.commit()
 
@@ -140,24 +128,19 @@ def test_setting_updated_at_moves_on_change(session: Session) -> None:
 
 
 def test_no_active_or_last_seen_column_on_devices(session: Session) -> None:
-    # Deliberate: activity is derived from the ledger in IOT-35, not stored.
-    # A stored flag needs something to keep it true and drifts the moment that
-    # fails. If a later ticket adds one, this failing test should be the prompt
-    # to justify it rather than a nuisance to delete.
+    # Deliberate: activity is derived from the ledger, not stored. If a later
+    # ticket adds a column, this failing test is the prompt to justify it.
     columns = {c["name"] for c in inspect(session.get_bind()).get_columns("devices")}
     assert columns == {"device_id", "location_id", "device_type", "registered_at"}
 
 
 def test_naive_datetime_written_is_read_back_as_utc(session: Session) -> None:
-    # SQLite has no timezone type, so a value stored through a plain
-    # DateTime(timezone=True) comes back naive while Postgres returns it aware.
-    # UtcDateTime normalises both ends; this is the regression test for that.
+    # SQLite returns naive datetimes where Postgres returns aware ones.
     session.add(
         Device(
             device_id="esp32-naive",
             device_type="DHT22",
-            # Suppression below is deliberate: a naive datetime is precisely
-            # what is under test, so the lint rule is asking for the bug back.
+            # Naive on purpose — it is what is under test.
             registered_at=datetime(2026, 1, 1, 12, 0, 0),  # noqa: DTZ001
         )
     )
@@ -172,8 +155,7 @@ def test_naive_datetime_written_is_read_back_as_utc(session: Session) -> None:
 def test_non_utc_input_is_normalised_to_utc(session: Session) -> None:
     from datetime import timedelta
 
-    # 12:00 at UTC+02:00 is 10:00 UTC. Storing only UTC is what keeps ordering
-    # correct across devices reporting from different offsets.
+    # 12:00 at UTC+02:00 is 10:00 UTC.
     plus_two = timezone(timedelta(hours=2))
     session.add(
         Device(
@@ -190,13 +172,7 @@ def test_non_utc_input_is_normalised_to_utc(session: Session) -> None:
 
 
 def test_init_db_creates_a_missing_sqlite_directory(tmp_path, monkeypatch) -> None:
-    """IOT-55 regression.
-
-    SQLite does not create missing parent directories — pointed at a path whose
-    directory does not exist it fails with "unable to open database file". From
-    a startup hook under `restart: unless-stopped` that is a crash loop, which
-    is how this took production down.
-    """
+    # IOT-55: SQLite will not create missing parent dirs, which crash-looped prod.
     import app.db as db_module
 
     missing = tmp_path / "does" / "not" / "exist"
@@ -219,8 +195,7 @@ def test_init_db_creates_a_missing_sqlite_directory(tmp_path, monkeypatch) -> No
 def test_ensure_sqlite_directory_ignores_memory_and_other_backends() -> None:
     from app.db import _ensure_sqlite_directory
 
-    # Neither has a filesystem path; both must be no-ops rather than trying to
-    # mkdir something like ":memory:".
+    # No filesystem path: must be no-ops.
     _ensure_sqlite_directory("sqlite://")
     _ensure_sqlite_directory("sqlite:///:memory:")
     _ensure_sqlite_directory("postgresql+psycopg://user:pw@host/db")
