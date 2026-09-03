@@ -23,6 +23,7 @@ services:
       STORAGE_CORE_URL: ${STORAGE_CORE_URL:-http://storage-core:8080}
       DATABASE_URL: ${DATABASE_URL:-sqlite:////app/data/app.db}
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173}
+      ACTIVE_WINDOW_SECONDS: ${ACTIVE_WINDOW_SECONDS:-300}
     volumes:
       # DATABASE_URL points into /app/data. Without this the SQLite file lives
       # in the container's writable layer and is destroyed on every redeploy —
