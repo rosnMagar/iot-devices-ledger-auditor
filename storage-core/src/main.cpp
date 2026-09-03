@@ -12,6 +12,7 @@
 #include "config.hpp"
 #include "log.hpp"
 #include "server.hpp"
+#include "signals.hpp"
 #include "storage.hpp"
 #include "ws.hpp"
 #include "writer.hpp"
@@ -19,6 +20,13 @@
 namespace {
 
 int run() {
+    // Before anything else spawns a thread: SIGTERM/SIGINT are blocked
+    // process-wide here and handled by one dedicated thread. Threads inherit
+    // the mask from their creator, so this has to come first — a signal
+    // delivered to a thread that has not blocked it kills the process outright.
+    ledger::ServerHandle server_handle;
+    ledger::SignalWaiter signals([&server_handle] { server_handle.stop(); });
+
     // Resolve config from the environment first; a bad BIND_ADDR fails fast here.
     const ledger::Config config = ledger::load_config();
     ledger::log::init(config.log_level);
@@ -80,13 +88,18 @@ int run() {
     ledger::log::info("websocket listening on " + config.ws_host + ":" +
                       std::to_string(config.ws_port) + "/blocks");
 
-    const bool ok = ledger::serve(state, config);
+    const bool ok = ledger::serve(state, config, &server_handle);
 
-    // Shut down in order: stop accepting work, let the writer drain what was
-    // already accepted, then join. Closing first is what makes pop() return
-    // nullopt and the loop exit — joining without it would hang forever.
-    // Stop accepting connections before touching the write path, so no client
-    // is left holding a subscription that is about to be closed underneath it.
+    // Reached on SIGTERM/SIGINT, or if listen() fails.
+    //
+    // Order matters and is the whole point of this sequence:
+    //   1. stop accepting  — no new request can be queued from here on
+    //   2. close the queue — refuses new work, keeps what was already accepted
+    //   3. join the writer — drains that backlog to disk before we exit
+    //   4. release readers — nothing is left blocked in next()
+    //
+    // Closing the queue before the listeners stop would make in-flight handlers
+    // return 500 for requests that could have been served.
     ledger::log::info("shutting down: stopping the websocket listener");
     ws.stop();
 

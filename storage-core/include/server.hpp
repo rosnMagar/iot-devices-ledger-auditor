@@ -1,4 +1,5 @@
 #pragma once
+#include <mutex>
 #include <shared_mutex>
 
 #include <broadcast.hpp>
@@ -49,9 +50,42 @@ struct AppState {
 /// the test ends. serve() blocks forever, which a test cannot use.
 void install_routes(httplib::Server& srv, AppState& state);
 
+/// A stop button for a running serve(), usable from another thread.
+///
+/// serve() owns its httplib::Server as a local, so nothing outside it can call
+/// stop(). This hands out that ability without putting the ~10k-line httplib
+/// header into every translation unit that needs to shut the server down.
+///
+/// Safe to call stop() at any point in the server's life, including *before*
+/// serve() has started: a stop that arrives early is remembered and applied the
+/// moment the server attaches. Without that, a signal racing startup would be
+/// dropped and the process would run on forever.
+class ServerHandle {
+public:
+    /// Ask the server to stop accepting and return from serve(). Idempotent,
+    /// and safe to call from any thread.
+    void stop();
+
+private:
+    friend bool serve(AppState&, const Config&, ServerHandle*);
+
+    /// Returns true if stop() already happened, meaning the caller should not
+    /// bother listening at all.
+    bool attach(httplib::Server* srv);
+    void detach();
+
+    std::mutex mtx_;
+    httplib::Server* srv_ = nullptr;
+    bool stopped_ = false;
+};
+
 /// Build the routes and serve on config.bind_host:config.bind_port. Blocks
 /// until the server stops. Returns false if the bind fails (port in use, bad
 /// host) — the caller turns that into a non-zero exit.
-bool serve(AppState& state, const Config& config);
+///
+/// Pass a ServerHandle to be able to stop it from another thread; without one
+/// the server runs until the process dies.
+bool serve(AppState& state, const Config& config,
+           ServerHandle* handle = nullptr);
 
 }  // namespace ledger
