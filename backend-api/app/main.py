@@ -1,10 +1,30 @@
 import os
+from contextlib import asynccontextmanager
 
 import httpx
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
-app = FastAPI(title="backend-api (stub)")
+from app.db import init_db
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Create any missing tables before the first request is served.
+
+    A lifespan handler rather than @app.on_event("startup"), which FastAPI
+    deprecates.
+
+    create_all is create-if-absent: it never alters an existing table, so a
+    changed column will not appear on a database that already has it. Fine while
+    the schema is still moving and the data is disposable — see
+    docs/db-schema.md for why the Postgres move needs Alembic instead.
+    """
+    init_db()
+    yield
+
+
+app = FastAPI(title="backend-api (stub)", lifespan=lifespan)
 
 # Comma-separated list of allowed browser origins. The default is the Vite dev
 # server and is only ever right locally — in production this is set by the
@@ -45,7 +65,10 @@ async def blocks():
 
 @app.get("/users")
 async def users():
-    # Stub — Phase 2 replaces this with real SQLAlchemy queries.
+    # Still a stub. IOT-34 added the models but deliberately did not switch this
+    # over: the users table starts empty, so a real query would return [] and
+    # blank the frontend that currently renders these two rows. The users
+    # endpoint moves across with the auth work, which is what will populate it.
     return [
         {"id": 1, "username": "operator-1", "role": "operator"},
         {"id": 2, "username": "admin", "role": "admin"},
