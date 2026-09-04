@@ -122,22 +122,49 @@ jobs:
             cd /opt/audit-ledger
             git pull origin prod
 
-            # TAG is set here rather than read from the box's .env. It used to
-            # come from that file, so a missing or stale .env meant compose fell
-            # back to :dev and deployed development images to production while
-            # reporting success. The deploy now states the tag it means.
-            export TAG=prod
+            # These are WRITTEN TO .env, not just exported (IOT-57).
+            #
+            # They used to be shell exports, which live only for this SSH
+            # session. Any later `docker compose up` run by hand — during an
+            # incident, say — came up without them and silently took
+            # docker-compose.yml's defaults instead. For CORS_ORIGINS that
+            # default is the Vite dev server, so the production frontend started
+            # getting its requests rejected by the browser with nothing wrong in
+            # any log. Persisting them means a manual restart behaves like a
+            # deploy.
+            #
+            # TAG: a stale .env used to mean compose fell back to :dev and put
+            # development images into production while reporting success.
+            #
+            # CORS_ORIGINS: the frontend is served by nginx on :80, so the
+            # browser sends Origin: http://<host> when calling backend-api on
+            # :8000. Derived from EC2_HOST so it cannot drift from the address
+            # actually in use.
+            touch .env
+            sed -i '/^TAG=/d;/^CORS_ORIGINS=/d' .env
+            printf 'TAG=%s\n' 'prod' >> .env
+            printf 'CORS_ORIGINS=%s\n' 'http://${{ secrets.EC2_HOST }}' >> .env
 
-            # Same reasoning: CORS_ORIGINS defaults to the Vite dev server
-            # (http://localhost:5173), which is never the production origin. The
-            # frontend is served by nginx on :80, so the browser sends
-            # Origin: http://<host> when calling backend-api on :8000 — a
-            # cross-origin request that was being rejected. Derived from
-            # EC2_HOST so it can't drift from the address actually in use.
+            # Still exported, so this deploy does not depend on compose re-reading
+            # the file it was just handed.
+            export TAG=prod
             export CORS_ORIGINS=http://${{ secrets.EC2_HOST }}
 
             docker compose pull
             docker compose up -d
+
+            # Confirm .env really holds what a manual restart will need. Checked
+            # against the file rather than `docker compose config`, so the guard
+            # does not depend on compose's output formatting.
+            if ! grep -qx 'CORS_ORIGINS=http://${{ secrets.EC2_HOST }}' .env; then
+              echo "CORS_ORIGINS was not persisted to .env — a manual restart would serve the wrong origin" >&2
+              grep -E '^(TAG|CORS_ORIGINS)=' .env >&2 || true
+              exit 1
+            fi
+            if ! grep -qx 'TAG=prod' .env; then
+              echo "TAG was not persisted to .env" >&2
+              exit 1
+            fi
 
             # `up -d` exits 0 as soon as the container is created, so a container
             # that crash-loops still looks like a successful deploy. Poll /health
