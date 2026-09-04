@@ -27,8 +27,32 @@ def block(index: int, actor: str, when: datetime) -> dict:
     }
 
 
+def chain_transport(blocks: list[dict]) -> httpx.MockTransport:
+    # Models storage-core for real, including the 400 on a range starting past
+    # the last block. The canned-response transport below cannot produce that,
+    # which is how IOT-56 slipped through.
+    calls: list[str | None] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        raw = request.url.params.get("from")
+        calls.append(raw)
+        start = int(raw) if raw is not None else 0
+        last = len(blocks) - 1
+        if start > last:
+            return httpx.Response(
+                400, json={"error": f"invalid range: from={start} exceeds to={last}"}
+            )
+        return httpx.Response(
+            200, json={"blocks": blocks[start:], "chain_length": len(blocks)}
+        )
+
+    transport = httpx.MockTransport(handler)
+    transport.calls = calls  # type: ignore[attr-defined]
+    return transport
+
+
 def ledger_transport(pages: list[dict]) -> httpx.MockTransport:
-    # One /blocks response per call; records each `from` param.
+    # One canned /blocks response per call; records each `from` param.
     calls: list[str | None] = []
     remaining = list(pages)
 
@@ -121,8 +145,9 @@ async def test_refresh_resumes_from_the_last_index_instead_of_rescanning() -> No
     await refresh_with(cache, transport)
     await refresh_with(cache, transport)
 
-    # The point of the cache: the second call asks for the tail, not the start.
-    assert transport.calls == ["0", "2"]
+    # The second call asks for the tail, not the start. It trails by one block
+    # on purpose — see IOT-56.
+    assert transport.calls == ["0", "1"]
     assert cache.last_seen("esp32-01") == NOW - timedelta(minutes=1)
 
 
@@ -139,7 +164,7 @@ async def test_resume_index_follows_chain_length_not_blocks_received() -> None:
     await refresh_with(cache, transport)
     await refresh_with(cache, transport)
 
-    assert transport.calls == ["0", "50"]
+    assert transport.calls == ["0", "49"]
 
 
 @pytest.mark.asyncio()
@@ -236,3 +261,55 @@ async def test_genesis_actor_is_harmless() -> None:
 
     # "system" matches no registered device, so genesis needs no special case.
     assert cache.last_seen("system") == NOW
+
+
+@pytest.mark.asyncio()
+async def test_repeated_refresh_with_no_new_blocks_stays_reachable() -> None:
+    # IOT-56. The cursor used to land one past the last index, so a poll with
+    # nothing new asked for a range storage-core rejects — and ledger_reachable
+    # went false whenever no event had arrived since the last request.
+    cache = LedgerActivity()
+    transport = chain_transport([block(0, "system", NOW), block(1, "esp32-01", NOW)])
+
+    for _ in range(4):
+        await refresh_with(cache, transport)
+        assert cache.reachable is True
+
+    assert cache.last_seen("esp32-01") == NOW
+    # Never asks for an index past the end.
+    assert all(int(c) <= 1 for c in transport.calls)
+
+
+@pytest.mark.asyncio()
+async def test_new_blocks_are_still_picked_up_after_catching_up() -> None:
+    cache = LedgerActivity()
+    blocks = [block(0, "system", NOW - timedelta(hours=1))]
+    transport = chain_transport(blocks)
+
+    await refresh_with(cache, transport)
+    assert cache.last_seen("esp32-01") is None
+
+    blocks.append(block(1, "esp32-01", NOW))
+    await refresh_with(cache, transport)
+
+    assert cache.last_seen("esp32-01") == NOW
+    assert cache.reachable is True
+
+
+@pytest.mark.asyncio()
+async def test_a_cursor_past_the_end_rewinds_and_rescans() -> None:
+    # The ledger was reset or replaced, leaving the cursor beyond the new chain.
+    # Without the rewind every future poll repeats the same bad request forever.
+    cache = LedgerActivity()
+    long_chain = [block(i, "esp32-01", NOW) for i in range(6)]
+    await refresh_with(cache, chain_transport(long_chain))
+
+    short_chain = [block(0, "system", NOW)]
+    short = chain_transport(short_chain)
+
+    await refresh_with(cache, short)
+    assert cache.reachable is False  # the 400 that triggered the rewind
+
+    await refresh_with(cache, short)
+    assert cache.reachable is True   # rescanned from the start
+    assert short.calls == ["5", "0"]
