@@ -61,13 +61,29 @@ class LedgerActivity:
         owns_client = client is None
         client = client or httpx.AsyncClient()
         try:
+            # from = _next_index - 1, not _next_index. storage-core 400s on a
+            # range starting past the last block, and _next_index is exactly one
+            # past it once we have caught up — so asking for it would 400 on
+            # every poll where nothing new arrived (IOT-56). Re-reading the last
+            # block is harmless: _consume keeps the max timestamp.
             response = await client.get(
                 f"{self._base_url}/blocks",
-                params={"from": self._next_index},
+                params={"from": max(0, self._next_index - 1)},
                 timeout=5.0,
             )
             response.raise_for_status()
             payload = response.json()
+        except httpx.HTTPStatusError as exc:
+            self._reachable = False
+            if exc.response.status_code == 400:
+                # Our cursor is past the end of the chain — the ledger was reset
+                # or replaced. Rewind so the next refresh rescans from scratch,
+                # otherwise every future poll repeats this same bad request.
+                logger.warning("ledger cursor past end of chain; rescanning next refresh")
+                self._next_index = 0
+            else:
+                logger.warning("could not refresh ledger activity: %s", exc)
+            return
         except (httpx.HTTPError, ValueError) as exc:
             # Keep the cache: clearing it would report the whole fleet inactive
             # after one blip.
