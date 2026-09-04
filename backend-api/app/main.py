@@ -1,5 +1,6 @@
 import os
 from contextlib import asynccontextmanager
+from datetime import datetime, timezone
 from typing import Annotated
 
 import httpx
@@ -62,26 +63,85 @@ async def blocks():
             raise HTTPException(status_code=502, detail=f"storage-core unreachable: {exc}")
 
 
+STATUS_VALUES = ("active", "inactive", "all")
+SORT_KEYS = ("last_seen", "name", "location")
+ORDER_VALUES = ("asc", "desc")
+
+# Never-reported devices sort as the oldest possible time, so they land at the
+# bottom under the default last_seen/desc.
+_NEVER = datetime.min.replace(tzinfo=timezone.utc)
+
+
+def _one_of(value: str, allowed: tuple[str, ...], param: str) -> str:
+    if value not in allowed:
+        raise HTTPException(
+            status_code=400,
+            detail=f"{param} must be one of {', '.join(allowed)} (got {value!r})",
+        )
+    return value
+
+
+def _sort_key(record: dict, sort: str):
+    # device_id is the tiebreaker everywhere, so results are deterministic.
+    if sort == "last_seen":
+        return (record["last_seen"] or _NEVER, record["device_id"])
+    if sort == "location":
+        return (record["location_id"] or "", record["device_id"])
+    return (record["device_id"], "")  # "name" — devices have no separate name
+
+
 @app.get("/devices")
-async def devices(session: Annotated[Session, Depends(get_session)]):
+async def devices(
+    session: Annotated[Session, Depends(get_session)],
+    status: str = "all",
+    location_id: str | None = None,
+    device_type: str | None = None,
+    sort: str = "last_seen",
+    order: str = "desc",
+):
     # Registry from SQLite; status/last_seen derived from the ledger.
-    # ledger_reachable is surfaced so the UI can flag stale activity.
+    # location_id/device_type filter in SQL (both indexed); status and every sort
+    # run in Python because they depend on derived values SQL cannot see.
+    _one_of(status, STATUS_VALUES, "status")
+    _one_of(sort, SORT_KEYS, "sort")
+    _one_of(order, ORDER_VALUES, "order")
+
     await ledger_activity.refresh()
 
-    rows = session.execute(select(Device).order_by(Device.device_id)).scalars().all()
+    query = select(Device)
+    if location_id is not None:
+        query = query.where(Device.location_id == location_id)
+    if device_type is not None:
+        query = query.where(Device.device_type == device_type)
+
+    records = [
+        {
+            "device_id": device.device_id,
+            "location_id": device.location_id,
+            "device_type": device.device_type,
+            "registered_at": device.registered_at,
+            # null = never reported; a timestamp = went quiet.
+            "last_seen": ledger_activity.last_seen(device.device_id),
+            "status": ledger_activity.status(device.device_id),
+        }
+        for device in session.execute(query).scalars().all()
+    ]
+
+    if status != "all":
+        records = [r for r in records if r["status"] == status]
+
+    records.sort(key=lambda r: _sort_key(r, sort), reverse=(order == "desc"))
+
     return {
-        "devices": [
-            {
-                "device_id": device.device_id,
-                "location_id": device.location_id,
-                "device_type": device.device_type,
-                "registered_at": device.registered_at,
-                # null = never reported; a timestamp = went quiet.
-                "last_seen": ledger_activity.last_seen(device.device_id),
-                "status": ledger_activity.status(device.device_id),
-            }
-            for device in rows
-        ],
+        "devices": records,
+        "count": len(records),
+        "filters": {
+            "status": status,
+            "location_id": location_id,
+            "device_type": device_type,
+        },
+        "sort": sort,
+        "order": order,
         "active_window_seconds": ACTIVE_WINDOW_SECONDS,
         "ledger_reachable": ledger_activity.reachable,
     }

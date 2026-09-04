@@ -49,7 +49,34 @@ computed from the most recent block whose `actor` is the device.
   correct. This is reported rather than hidden: a dashboard showing stale
   "active" badges as though they were current is the failure mode to avoid.
 
-Filtering and sorting arrive in IOT-36.
+#### Query parameters (IOT-36)
+
+| Param | Values | Default |
+|---|---|---|
+| `status` | `active`, `inactive`, `all` | `all` |
+| `location_id` | any location id | unset (no filter) |
+| `device_type` | any device type | unset (no filter) |
+| `sort` | `last_seen`, `name`, `location` | `last_seen` |
+| `order` | `asc`, `desc` | `desc` |
+
+An invalid `status`, `sort` or `order` is a **400** naming the allowed values.
+An unknown parameter is ignored, so a typo'd filter fails open to the full list
+rather than erroring.
+
+`sort=name` orders by `device_id` — devices have no separate name column.
+`device_id` is also the tiebreaker for every sort, so results are deterministic.
+
+Devices that have never reported (`last_seen: null`) sort as the oldest possible
+time: last under the default `last_seen`/`desc`, first under `asc`.
+
+`location_id` and `device_type` filter in SQL (both columns are indexed).
+`status` and every sort run in Python, because they depend on values derived
+from the ledger that SQL cannot see. Fine for a fleet; if the registry ever
+grows past what is comfortable to hold in memory, `last_seen` would need
+materialising — which is the thing IOT-34 deliberately avoided, so it should be
+a considered change rather than a quiet one.
+
+The response echoes the applied `filters`, `sort`, `order` and a `count`.
 
 **Reading the ledger.** The activity cache is incremental: it remembers the next
 block index it has not consumed and asks storage-core for `/blocks?from=<that>`,
