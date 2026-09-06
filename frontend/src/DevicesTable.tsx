@@ -41,12 +41,16 @@ function StatusBadge({ status }: { status: Device['status'] }) {
 export default function DevicesTable({
   devices,
   now,
+  emptyMessage = 'No devices registered yet.',
 }: {
   devices: Device[]
   now?: Date
+  // An empty fleet and a filter that matches nothing are different problems, so
+  // the caller says which one this is.
+  emptyMessage?: string
 }) {
   if (devices.length === 0) {
-    return <p style={styles.empty}>No devices registered yet.</p>
+    return <p style={styles.empty}>{emptyMessage}</p>
   }
 
   return (
