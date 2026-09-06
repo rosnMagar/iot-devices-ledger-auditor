@@ -313,3 +313,46 @@ async def test_a_cursor_past_the_end_rewinds_and_rescans() -> None:
     await refresh_with(cache, short)
     assert cache.reachable is True   # rescanned from the start
     assert short.calls == ["5", "0"]
+
+
+@pytest.mark.asyncio()
+async def test_the_active_window_is_actually_configurable(monkeypatch) -> None:
+    # IOT-40. Every other window test pins 300, so a hardcoded 300 would satisfy
+    # all of them. This one only passes if the setting is really consulted.
+    monkeypatch.setattr(activity_module, "ACTIVE_WINDOW_SECONDS", 60)
+    cache = LedgerActivity()
+    await refresh_with(
+        cache,
+        ledger_transport(
+            [
+                {
+                    "blocks": [block(1, "esp32-01", NOW - timedelta(seconds=120))],
+                    "chain_length": 2,
+                }
+            ]
+        ),
+    )
+
+    # 120s ago: inactive under a 60s window, but active under the 300s default.
+    assert cache.status("esp32-01", now=NOW) == "inactive"
+
+
+@pytest.mark.asyncio()
+async def test_a_longer_window_keeps_a_slow_reporter_active(monkeypatch) -> None:
+    # The mirror image, so the test above cannot pass by always saying inactive.
+    monkeypatch.setattr(activity_module, "ACTIVE_WINDOW_SECONDS", 3600)
+    cache = LedgerActivity()
+    await refresh_with(
+        cache,
+        ledger_transport(
+            [
+                {
+                    "blocks": [block(1, "esp32-01", NOW - timedelta(seconds=600))],
+                    "chain_length": 2,
+                }
+            ]
+        ),
+    )
+
+    # 600s ago: inactive at the 300s default, active on a slow duty cycle.
+    assert cache.status("esp32-01", now=NOW) == "active"
