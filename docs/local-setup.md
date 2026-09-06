@@ -79,8 +79,10 @@ nvm use 20
 Frontend:
 ```bash
 cd frontend
-npm install
+npm ci        # npm ci, not install: package-lock.json is committed
 npm run dev   # dev server on http://localhost:5173
+npm test      # vitest, once
+npm run test:watch
 ```
 
 Auditor Lambda (TypeScript):

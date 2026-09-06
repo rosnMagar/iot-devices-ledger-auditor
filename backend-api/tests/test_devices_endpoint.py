@@ -90,9 +90,15 @@ def test_devices_lists_the_registry_with_derived_status(client, monkeypatch) -> 
 
 
 def test_devices_reports_the_configured_window(client, monkeypatch) -> None:
+    # IOT-40: asserting only isinstance(int) would pass on 0, or on any wrong
+    # number. The frontend prints this to explain what "active" means, so a
+    # value that does not match the setting is a lie on the page.
     monkeypatch.setattr(main_module, "ledger_activity", FakeActivity({}))
+    monkeypatch.setattr(main_module, "ACTIVE_WINDOW_SECONDS", 900)
+
     body = client.get("/devices").json()
-    assert isinstance(body["active_window_seconds"], int)
+
+    assert body["active_window_seconds"] == 900
 
 
 def test_devices_refreshes_activity_on_each_request(client, monkeypatch) -> None:
