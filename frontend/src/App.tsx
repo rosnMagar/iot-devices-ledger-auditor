@@ -1,4 +1,8 @@
+import { useMemo, useState } from 'react'
+
 import DevicesTable from './DevicesTable'
+import FilterControls from './FilterControls'
+import { applyFilters, isFiltered, NO_FILTERS, optionsFrom } from './filters'
 import { useDevices } from './useDevices'
 
 // No localhost fallback. Vite inlines this at build time, so if it's missing the
@@ -10,6 +14,12 @@ const page = { fontFamily: 'monospace', padding: '2rem', maxWidth: '900px' } as 
 
 export default function App() {
   const { data, loading, error } = useDevices(API)
+  const [filters, setFilters] = useState(NO_FILTERS)
+
+  const all = data?.devices
+  // Options track the fetched fleet, not the filtered view — see filters.ts.
+  const options = useMemo(() => optionsFrom(all ?? []), [all])
+  const shown = useMemo(() => applyFilters(all ?? [], filters), [all, filters])
 
   if (!API) {
     return (
@@ -38,12 +48,30 @@ export default function App() {
             </p>
           )}
 
+          <FilterControls
+            filters={filters}
+            locationIds={options.locationIds}
+            deviceTypes={options.deviceTypes}
+            onChange={setFilters}
+          />
+
+          {/* Both numbers while filtering, so a narrow filter never reads as a
+              fleet that has shrunk. */}
           <p style={{ color: '#888' }}>
-            {data.count} device{data.count === 1 ? '' : 's'} · active means seen in
-            the last {data.active_window_seconds}s
+            {isFiltered(filters)
+              ? `${shown.length} of ${data.count} devices`
+              : `${data.count} device${data.count === 1 ? '' : 's'}`}{' '}
+            · active means seen in the last {data.active_window_seconds}s
           </p>
 
-          <DevicesTable devices={data.devices} />
+          <DevicesTable
+            devices={shown}
+            emptyMessage={
+              isFiltered(filters)
+                ? 'No devices match these filters.'
+                : 'No devices registered yet.'
+            }
+          />
         </>
       )}
     </main>
