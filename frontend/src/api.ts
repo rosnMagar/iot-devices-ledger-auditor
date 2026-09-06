@@ -20,9 +20,12 @@ export interface DevicesResponse {
 
 export async function fetchDevices(
   apiBase: string,
+  params?: URLSearchParams,
   signal?: AbortSignal,
 ): Promise<DevicesResponse> {
-  const response = await fetch(`${apiBase}/devices`, { signal })
+  const search = params?.toString()
+  const url = search ? `${apiBase}/devices?${search}` : `${apiBase}/devices`
+  const response = await fetch(url, { signal })
   if (!response.ok) {
     throw new Error(`GET /devices returned ${response.status} ${response.statusText}`)
   }

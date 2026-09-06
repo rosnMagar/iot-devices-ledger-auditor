@@ -1,5 +1,5 @@
-// Controlled inputs only. The filter state lives in the page container so
-// IOT-39 can derive the query params and the URL from that one source.
+// Controlled inputs only. The query state lives in the page container so the
+// request and the URL are both derived from one source.
 
 import type { DeviceFilters, StatusFilter } from './filters'
 import { isFiltered, NO_FILTERS } from './filters'
@@ -18,8 +18,8 @@ const styles = {
   clear: { fontFamily: 'inherit', padding: '0.3rem 0.75rem', cursor: 'pointer' } as const,
 }
 
-// '' is the "no constraint" option; the state uses null so it matches the
-// query param IOT-39 will send (an absent param, not an empty string).
+// '' is the "no constraint" option; the state uses null so toSearchParams can
+// omit the param entirely rather than sending an empty one.
 function toValue(selected: string): string | null {
   return selected === '' ? null : selected
 }
@@ -33,7 +33,8 @@ export default function FilterControls({
   filters: DeviceFilters
   locationIds: string[]
   deviceTypes: string[]
-  onChange: (next: DeviceFilters) => void
+  // A patch, not a whole query: clearing filters must not also reset the sort.
+  onChange: (patch: Partial<DeviceFilters>) => void
 }) {
   return (
     <div style={styles.bar}>
@@ -45,9 +46,7 @@ export default function FilterControls({
           id="filter-status"
           style={styles.select}
           value={filters.status}
-          onChange={(e) =>
-            onChange({ ...filters, status: e.target.value as StatusFilter })
-          }
+          onChange={(e) => onChange({ status: e.target.value as StatusFilter })}
         >
           <option value="all">All</option>
           <option value="active">Active</option>
@@ -63,7 +62,7 @@ export default function FilterControls({
           id="filter-location"
           style={styles.select}
           value={filters.locationId ?? ''}
-          onChange={(e) => onChange({ ...filters, locationId: toValue(e.target.value) })}
+          onChange={(e) => onChange({ locationId: toValue(e.target.value) })}
         >
           <option value="">All locations</option>
           {locationIds.map((id) => (
@@ -82,7 +81,7 @@ export default function FilterControls({
           id="filter-type"
           style={styles.select}
           value={filters.deviceType ?? ''}
-          onChange={(e) => onChange({ ...filters, deviceType: toValue(e.target.value) })}
+          onChange={(e) => onChange({ deviceType: toValue(e.target.value) })}
         >
           <option value="">All types</option>
           {deviceTypes.map((type) => (
