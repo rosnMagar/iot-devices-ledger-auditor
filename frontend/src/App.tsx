@@ -1,9 +1,11 @@
-import { useMemo, useState } from 'react'
-
 import DevicesTable from './DevicesTable'
 import FilterControls from './FilterControls'
-import { applyFilters, isFiltered, NO_FILTERS, optionsFrom } from './filters'
-import { useDevices } from './useDevices'
+import { isFiltered } from './filters'
+import type { DeviceFilters } from './filters'
+import type { SortKey } from './query'
+import { toggleSort } from './query'
+import { useDevices, useFleetOptions } from './useDevices'
+import { useUrlQuery } from './useUrlQuery'
 
 // No localhost fallback. Vite inlines this at build time, so if it's missing the
 // bundle is already wrong and every user's browser would silently call their own
@@ -13,13 +15,14 @@ const API = (import.meta.env.VITE_API_BASE_URL as string | undefined)?.trim()
 const page = { fontFamily: 'monospace', padding: '2rem', maxWidth: '900px' } as const
 
 export default function App() {
-  const { data, loading, error } = useDevices(API)
-  const [filters, setFilters] = useState(NO_FILTERS)
+  const [query, setQuery] = useUrlQuery()
+  const { data, loading, error } = useDevices(API, query)
+  const options = useFleetOptions(API)
 
-  const all = data?.devices
-  // Options track the fetched fleet, not the filtered view — see filters.ts.
-  const options = useMemo(() => optionsFrom(all ?? []), [all])
-  const shown = useMemo(() => applyFilters(all ?? [], filters), [all, filters])
+  // Selects and header clicks are discrete events, so there is nothing to
+  // debounce — one change is one request.
+  const patchFilters = (patch: Partial<DeviceFilters>) => setQuery({ ...query, ...patch })
+  const sortBy = (key: SortKey) => setQuery(toggleSort(query, key))
 
   if (!API) {
     return (
@@ -35,44 +38,52 @@ export default function App() {
     <main style={page}>
       <h1>IoT Devices Ledger Auditor</h1>
 
-      {loading && <p style={{ color: '#888' }}>Loading devices…</p>}
       {error && <p style={{ color: 'red' }}>Error: {error}</p>}
 
+      {/* Status is derived from the ledger; if it is unreachable the column is
+          stale, and saying nothing would show a dead fleet as healthy. */}
+      {data && !data.ledger_reachable && (
+        <p style={{ background: '#fff3cd', color: '#7a5c00', padding: '0.5rem' }}>
+          The ledger is unreachable — status and last seen may be out of date.
+        </p>
+      )}
+
+      <FilterControls
+        filters={query}
+        locationIds={options.locationIds}
+        deviceTypes={options.deviceTypes}
+        onChange={patchFilters}
+      />
+
+      <p style={{ color: '#888' }}>
+        {/* Both numbers while filtering, so a narrow filter never reads as a
+            fleet that has shrunk. The total comes from the unfiltered fetch. */}
+        {data === null
+          ? 'Loading devices…'
+          : isFiltered(query)
+            ? `${data.count} of ${options.total} devices`
+            : `${data.count} device${data.count === 1 ? '' : 's'}`}
+        {' · '}
+        {/* Rows stay on screen while refetching, so this is the only signal
+            that a filter change is still in flight. */}
+        {loading && data !== null ? 'updating…' : null}
+        {data !== null && !loading
+          ? `active means seen in the last ${data.active_window_seconds}s`
+          : null}
+      </p>
+
       {data && (
-        <>
-          {/* Status is derived from the ledger; if it is unreachable the column
-              is stale, and saying nothing would show a dead fleet as healthy. */}
-          {!data.ledger_reachable && (
-            <p style={{ background: '#fff3cd', color: '#7a5c00', padding: '0.5rem' }}>
-              The ledger is unreachable — status and last seen may be out of date.
-            </p>
-          )}
-
-          <FilterControls
-            filters={filters}
-            locationIds={options.locationIds}
-            deviceTypes={options.deviceTypes}
-            onChange={setFilters}
-          />
-
-          {/* Both numbers while filtering, so a narrow filter never reads as a
-              fleet that has shrunk. */}
-          <p style={{ color: '#888' }}>
-            {isFiltered(filters)
-              ? `${shown.length} of ${data.count} devices`
-              : `${data.count} device${data.count === 1 ? '' : 's'}`}{' '}
-            · active means seen in the last {data.active_window_seconds}s
-          </p>
-
-          <DevicesTable
-            devices={shown}
-            emptyMessage={
-              isFiltered(filters)
-                ? 'No devices match these filters.'
-                : 'No devices registered yet.'
-            }
-          />
-        </>
+        <DevicesTable
+          devices={data.devices}
+          sort={query.sort}
+          order={query.order}
+          onSort={sortBy}
+          emptyMessage={
+            isFiltered(query)
+              ? 'No devices match these filters.'
+              : 'No devices registered yet.'
+          }
+        />
       )}
     </main>
   )

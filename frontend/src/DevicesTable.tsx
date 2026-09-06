@@ -2,6 +2,7 @@
 // reused wherever a device list already exists.
 
 import type { Device } from './api'
+import type { SortKey, SortOrder } from './query'
 import { relativeTime } from './relativeTime'
 
 const styles = {
@@ -12,6 +13,17 @@ const styles = {
     borderBottom: '2px solid #ddd',
     color: '#555',
   } as const,
+  sortButton: {
+    font: 'inherit',
+    color: 'inherit',
+    background: 'none',
+    border: 'none',
+    padding: 0,
+    cursor: 'pointer',
+    display: 'inline-flex',
+    gap: '0.35rem',
+  } as const,
+  arrow: { color: '#888' } as const,
   td: { padding: '0.5rem', borderBottom: '1px solid #eee' } as const,
   badge: {
     padding: '0.15rem 0.5rem',
@@ -38,30 +50,70 @@ function StatusBadge({ status }: { status: Device['status'] }) {
   )
 }
 
+// Only last_seen, name and location are sortable — those are the keys the
+// backend accepts. Type and Status render as plain headers rather than dead
+// buttons, so nothing invites a click that would do nothing.
+function SortableHeader({
+  label,
+  sortKey,
+  sort,
+  order,
+  onSort,
+}: {
+  label: string
+  sortKey: SortKey
+  sort: SortKey
+  order: SortOrder
+  onSort: (key: SortKey) => void
+}) {
+  const activeSort = sort === sortKey
+  return (
+    <th
+      style={styles.th}
+      aria-sort={activeSort ? (order === 'asc' ? 'ascending' : 'descending') : 'none'}
+    >
+      <button type="button" style={styles.sortButton} onClick={() => onSort(sortKey)}>
+        {label}
+        <span style={styles.arrow} aria-hidden="true">
+          {activeSort ? (order === 'asc' ? '▲' : '▼') : '↕'}
+        </span>
+      </button>
+    </th>
+  )
+}
+
 export default function DevicesTable({
   devices,
   now,
   emptyMessage = 'No devices registered yet.',
+  sort,
+  order,
+  onSort,
 }: {
   devices: Device[]
   now?: Date
   // An empty fleet and a filter that matches nothing are different problems, so
   // the caller says which one this is.
   emptyMessage?: string
+  sort: SortKey
+  order: SortOrder
+  onSort: (key: SortKey) => void
 }) {
   if (devices.length === 0) {
     return <p style={styles.empty}>{emptyMessage}</p>
   }
 
+  const headerProps = { sort, order, onSort }
+
   return (
     <table style={styles.table}>
       <thead>
         <tr>
-          <th style={styles.th}>Name</th>
+          <SortableHeader label="Name" sortKey="name" {...headerProps} />
           <th style={styles.th}>Type</th>
-          <th style={styles.th}>Location</th>
+          <SortableHeader label="Location" sortKey="location" {...headerProps} />
           <th style={styles.th}>Status</th>
-          <th style={styles.th}>Last seen</th>
+          <SortableHeader label="Last seen" sortKey="last_seen" {...headerProps} />
         </tr>
       </thead>
       <tbody>

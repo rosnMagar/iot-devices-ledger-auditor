@@ -1,5 +1,5 @@
-// Client-side filtering. Wiring these to GET /devices query params is IOT-39,
-// so the shape here matches the params that endpoint already accepts.
+// Filter state. The filtering itself is done by the backend (IOT-39) — these
+// names match the GET /devices query params so the two cannot drift.
 
 import type { Device } from './api'
 
@@ -25,22 +25,8 @@ export function isFiltered(filters: DeviceFilters): boolean {
   )
 }
 
-// AND across the three, so each one only ever narrows the result.
-export function applyFilters(devices: Device[], filters: DeviceFilters): Device[] {
-  return devices.filter((device) => {
-    if (filters.status !== 'all' && device.status !== filters.status) return false
-    if (filters.locationId !== null && device.location_id !== filters.locationId) {
-      return false
-    }
-    if (filters.deviceType !== null && device.device_type !== filters.deviceType) {
-      return false
-    }
-    return true
-  })
-}
-
-// Options come from the *unfiltered* list. Deriving them from what is currently
-// shown would let one choice empty another dropdown and strand the operator.
+// Fed from an unfiltered fetch — see useFleetOptions. Building these from a
+// filtered response would let one choice empty another dropdown.
 export function optionsFrom(devices: Device[]): {
   locationIds: string[]
   deviceTypes: string[]
