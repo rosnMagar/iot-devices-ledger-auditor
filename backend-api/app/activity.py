@@ -3,6 +3,7 @@
 
 import logging
 import os
+from collections import deque
 from datetime import datetime, timedelta, timezone
 
 import httpx
@@ -11,6 +12,10 @@ logger = logging.getLogger(__name__)
 
 STORAGE_CORE_URL = os.environ.get("STORAGE_CORE_URL", "http://localhost:8080")
 ACTIVE_WINDOW_SECONDS = int(os.environ.get("ACTIVE_WINDOW_SECONDS", "300"))
+# Readings kept in memory per sensor. Bounded on purpose: the ledger grows
+# without limit and this is a cache, not storage. Older readings are still in
+# the chain — they are simply not served by /readings.
+HISTORY_LIMIT = int(os.environ.get("READING_HISTORY_LIMIT", "500"))
 
 
 def _parse_timestamp(raw: str) -> datetime | None:
@@ -32,6 +37,8 @@ class LedgerActivity:
         self._last_seen: dict[str, datetime] = {}
         # (device_id, sensor_id) -> the most recent reading seen for it.
         self._latest: dict[tuple[str, str], dict] = {}
+        # (device_id, sensor_id) -> bounded history, oldest first.
+        self._history: dict[tuple[str, str], deque] = {}
         self._next_index = 0
         self._reachable = True
 
@@ -106,6 +113,32 @@ class LedgerActivity:
         # Sensor ids the ledger has reported for this device, registered or not.
         return {sid for (did, sid) in self._latest if did == device_id}
 
+    def readings(
+        self,
+        device_id: str,
+        sensor_id: str | None = None,
+        since: datetime | None = None,
+        limit: int = HISTORY_LIMIT,
+    ) -> list[dict]:
+        """Recent readings, oldest first. Across all of a device's sensors when
+        sensor_id is None, so one request can back a whole panel."""
+        keys = (
+            [(device_id, sensor_id)]
+            if sensor_id is not None
+            else [k for k in self._history if k[0] == device_id]
+        )
+        collected: list[dict] = []
+        for key in keys:
+            for reading in self._history.get(key, ()):
+                if since is not None and reading["at"] <= since:
+                    continue
+                collected.append(reading)
+
+        # Sorted across sensors, then trimmed from the *newest* end — a chart
+        # wants the recent tail, not the oldest points that happen to fit.
+        collected.sort(key=lambda r: (r["at"], r["sensor_id"], r["seq"] or 0))
+        return collected[-limit:] if limit > 0 else []
+
     def _consume(self, payload: dict) -> None:
         for block in payload.get("blocks", []):
             event = block.get("event", {})
@@ -144,7 +177,7 @@ class LedgerActivity:
         previous = self._latest.get(key)
         if previous is not None and previous["at"] > timestamp:
             return  # out-of-order delivery must not rewind the latest reading
-        self._latest[key] = {
+        reading = {
             "sensor_id": sensor_id,
             "sensor_type": metadata.get("sensor_type"),
             # None is a real, meaningful value here: the sensor failed (ADR 0010).
@@ -153,3 +186,7 @@ class LedgerActivity:
             "seq": metadata.get("seq"),
             "at": timestamp,
         }
+        self._latest[key] = reading
+        if key not in self._history:
+            self._history[key] = deque(maxlen=HISTORY_LIMIT)
+        self._history[key].append(reading)
