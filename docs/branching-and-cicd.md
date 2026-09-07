@@ -2,10 +2,25 @@
 
 ## Branching model
 
-- `dev` — default/integration branch. Feature work happens on short-lived branches, PR'd into `dev`.
-- `prod` — deploy branch. Promote `dev` -> `prod` via PR/merge when ready to ship.
+- `dev` — integration branch. Per-ticket branches are merged here (with `--no-ff`) for testing.
+- `prod` — deploy branch and GitHub default branch. Promote to `prod` via PR from the ticket's feature branch once it's greenlit.
 
 See [`decisions/0005-dev-prod-branching.md`](decisions/0005-dev-prod-branching.md).
+
+## Per-ticket workflow
+
+Every ticket (see [`../tickets/`](../tickets/)) is worked on its own branch:
+
+1. **Branch** off `dev`, named `<type>/IOT-<n>-<short-kebab-description>`:
+   - `feature/` — new functionality (e.g. `feature/IOT-9-block-structs`)
+   - `bugfix/` — fixing a defect (e.g. `bugfix/IOT-42-fix-verify-range`)
+   - `chore/` — tooling/docs/maintenance with no app behavior change
+2. **Work & commit** on the branch — commit messages use the `IOT-<n>:` prefix.
+3. **Merge to `dev` with `--no-ff`** — `git merge --no-ff <branch>` always creates an explicit merge commit, so every integration is visible in `dev`'s history (never fast-forward).
+4. **Test on `dev`** — the change is verified on `dev` before it can be promoted.
+5. **PR to `prod`** — once greenlit, open a pull request to `prod` **from the feature branch** (not from `dev`). Merging the PR triggers the full deploy via `deploy.yml`.
+
+The feature branch stays alive until its `prod` PR is merged, since the PR is raised from it.
 
 ## `ci.yml` — on PRs and pushes to `dev`/`prod`
 

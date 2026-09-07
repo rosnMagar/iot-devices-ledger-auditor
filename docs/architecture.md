@@ -56,6 +56,14 @@ call. See [`decisions/0008-vendored-websocket-second-listener.md`](decisions/000
 Nothing consumes it yet: the backend-api relay is Phase 2 and the frontend
 dashboard is Phase 3.
 
+**`SENSOR_READING` metadata has a fixed shape** (IOT-58): a flat object with
+`celsius`, `humidity_pct` and an optional `seq`, where a failed sensor read is an
+explicit `null` rather than a missing key. storage-core does not validate it —
+it stays a generic ledger — so the contract is enforced by consumers on the way
+out. Blocks are immutable, so a payload written under the wrong shape is in the
+chain permanently. See
+[`decisions/0009-sensor-reading-payload.md`](decisions/0009-sensor-reading-payload.md).
+
 ## Status by component
 
 - `storage-core`: stub only (`/health`, hardcoded `/blocks`, `/verify`) — real implementation is Phase 1.

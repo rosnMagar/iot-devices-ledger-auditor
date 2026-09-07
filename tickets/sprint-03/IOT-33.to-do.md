@@ -9,7 +9,8 @@
 As a device, I want to post readings to storage-core so that physical sensor data enters the ledger.
 
 ## Acceptance criteria
-- [ ] Builds `EventPayload` JSON: `event_type: "SENSOR_READING"`, `location_id`/`actor` from secrets, `metadata: {temperature, humidity}`
+- [ ] Builds `EventPayload` JSON: `event_type: "SENSOR_READING"`, `location_id`/`actor` from secrets, `metadata: {celsius, humidity_pct, seq}` per ADR 0009
+- [ ] A failed sensor read sends an explicit `null`, not a missing key (ADR 0009)
 - [ ] `HTTPClient` POST to `http://<EC2-IP>:8080/events`; logs status code
 - [ ] A successful post produces a new block (verify via `GET /blocks`)
 - [ ] `docs/firmware.md` updated with wiring diagram + pin map + setup steps
