@@ -108,3 +108,40 @@ reconnect handling, and a story for what the cache holds while disconnected.
   They are tracked by the activity cache but appear nowhere, since `/devices`
   lists the registry. Surfacing them would turn a silent misconfiguration into a
   visible one.
+
+## `GET /devices/{device_id}/sensors`
+
+A device's registered sensors, each with its latest reading (IOT-73). This is
+what the dashboard panel calls on first paint — the full series is `/readings`.
+
+```json
+{
+  "device_id": "esp32-03",
+  "sensors": [
+    {"sensor_id": "acce-0", "sensor_type": "accelerometer", "unit": "m_s2",
+     "registered": true,
+     "latest": {"value": [-0.88, -1.01, 8.6], "unit": "m_s2", "seq": 3,
+                "at": "2026-09-07T19:58:31+00:00"}},
+    {"sensor_id": "temp-0", "sensor_type": "temperature", "unit": "celsius",
+     "registered": true,
+     "latest": {"value": 20.66, "unit": "celsius", "seq": 1, "at": "..."}}
+  ],
+  "count": 3,
+  "unregistered_count": 0,
+  "ledger_reachable": true
+}
+```
+
+- `latest` is `null` when a registered sensor has never reported. A `latest`
+  whose `value` is `null` is different: the sensor reported and the read failed
+  (ADR 0010).
+- `unit` on the sensor is what it is *expected* to report; the one inside
+  `latest` is authoritative, so a swapped probe is visible in the data.
+- `registered: false` entries are sensors the **ledger** has reported that no
+  registered sensor matches — a typo in a firmware config. They are surfaced
+  rather than hidden, because that is how the typo gets found.
+- Unknown device → `404`.
+
+`GET /devices` also carries a per-device `sensor_count` and sorted
+`sensor_types` summary, so the table can show what a board carries without a
+request per row.
