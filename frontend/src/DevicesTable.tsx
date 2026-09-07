@@ -89,6 +89,8 @@ export default function DevicesTable({
   sort,
   order,
   onSort,
+  selectedId = null,
+  onSelect,
 }: {
   devices: Device[]
   now?: Date
@@ -98,6 +100,8 @@ export default function DevicesTable({
   sort: SortKey
   order: SortOrder
   onSort: (key: SortKey) => void
+  selectedId?: string | null
+  onSelect?: (deviceId: string) => void
 }) {
   if (devices.length === 0) {
     return <p style={styles.empty}>{emptyMessage}</p>
@@ -114,11 +118,30 @@ export default function DevicesTable({
           <SortableHeader label="Location" sortKey="location" {...headerProps} />
           <th style={styles.th}>Status</th>
           <SortableHeader label="Last seen" sortKey="last_seen" {...headerProps} />
+          <th style={styles.th}>Sensors</th>
         </tr>
       </thead>
       <tbody>
         {devices.map((device) => (
-          <tr key={device.device_id}>
+          <tr
+            key={device.device_id}
+            onClick={() => onSelect?.(device.device_id)}
+            // The row is the control, so it needs to be reachable and announce
+            // its state without a mouse.
+            tabIndex={onSelect ? 0 : undefined}
+            role={onSelect ? 'button' : undefined}
+            aria-pressed={onSelect ? device.device_id === selectedId : undefined}
+            onKeyDown={(e) => {
+              if (onSelect && (e.key === 'Enter' || e.key === ' ')) {
+                e.preventDefault()
+                onSelect(device.device_id)
+              }
+            }}
+            style={{
+              cursor: onSelect ? 'pointer' : undefined,
+              background: device.device_id === selectedId ? '#eef5ff' : undefined,
+            }}
+          >
             {/* Devices have no separate name column; device_id is the name. */}
             <td style={styles.td}>{device.device_id}</td>
             <td style={styles.td}>{device.device_type}</td>
@@ -130,6 +153,9 @@ export default function DevicesTable({
             </td>
             <td style={styles.td} title={device.last_seen ?? 'never reported'}>
               {relativeTime(device.last_seen, now)}
+            </td>
+            <td style={styles.td} title={(device.sensor_types ?? []).join(', ')}>
+              {device.sensor_count ?? 0}
             </td>
           </tr>
         ))}
