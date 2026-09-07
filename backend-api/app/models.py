@@ -79,6 +79,36 @@ class Device(Base):
     registered_at: Mapped[datetime] = mapped_column(UtcDateTime, default=_utcnow)
 
     location: Mapped["Location | None"] = relationship(back_populates="devices")
+    sensors: Mapped[list["Sensor"]] = relationship(
+        back_populates="device", cascade="all, delete-orphan"
+    )
 
     def __repr__(self) -> str:
         return f"<Device {self.device_id!r} type={self.device_type!r}>"
+
+
+class Sensor(Base):
+    # A device is a board; sensors are what is attached to it (ADR 0010). One
+    # device may carry several, they report at different rates and fail
+    # independently, so each is its own row and its own stream of readings.
+    #
+    # Composite PK: sensor_id is unique within a device, not globally. Two boards
+    # may both call their probe "temp-0", and a reading identifies itself by
+    # exactly this pair — actor is the device, metadata.sensor_id the sensor.
+    __tablename__ = "sensors"
+
+    device_id: Mapped[str] = mapped_column(
+        ForeignKey("devices.device_id", ondelete="CASCADE"), primary_key=True
+    )
+    sensor_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    sensor_type: Mapped[str] = mapped_column(String(32), index=True)
+    # The unit this sensor is *expected* to report. The authoritative unit is the
+    # one carried on each reading, so a swapped probe shows up in the data
+    # instead of silently corrupting a chart.
+    unit: Mapped[str] = mapped_column(String(32))
+    registered_at: Mapped[datetime] = mapped_column(UtcDateTime, default=_utcnow)
+
+    device: Mapped["Device"] = relationship(back_populates="sensors")
+
+    def __repr__(self) -> str:
+        return f"<Sensor {self.device_id!r}/{self.sensor_id!r} type={self.sensor_type!r}>"
