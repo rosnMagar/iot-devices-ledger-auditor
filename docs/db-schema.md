@@ -64,6 +64,37 @@ fallback lookup; easy to add when something needs it, pointless before.
 `location_id` is nullable so a device can be registered before its placement is
 decided.
 
+### `sensors`
+| Column | Type | Notes |
+|---|---|---|
+| `device_id` | str(64) | PK part 1, FK → `devices.device_id`, `ON DELETE CASCADE` |
+| `sensor_id` | str(64) | PK part 2 |
+| `sensor_type` | str(32) | indexed — `temperature`, `humidity`, `pressure`, `camera`, `accelerometer`, … |
+| `unit` | str(32) | expected unit; the authoritative one travels on each reading |
+| `registered_at` | UTC datetime | |
+
+A device is a board; sensors are what is attached to it. One device may carry
+several — they report at different rates, have different shapes, and fail
+independently — so each is its own row with its own stream of readings. See
+[ADR 0010](decisions/0010-sensors-and-per-sensor-readings.md).
+
+**The primary key is composite** (`device_id`, `sensor_id`) because a sensor id
+is unique *within a device*, not globally: two boards may both call their probe
+`temp-0`. It also matches how a reading identifies itself — `actor` names the
+device, `metadata.sensor_id` names the sensor — so no mapping is needed.
+
+**Deleting a device deletes its sensors**, at both the ORM level
+(`cascade="all, delete-orphan"`) and the database level (`ON DELETE CASCADE`).
+Orphaned rows would otherwise present as sensors of a device that no longer
+exists.
+
+`unit` here is what the sensor is *expected* to report. The unit that counts is
+the one on each reading, so a probe swapped from °C to °F becomes visible in the
+data rather than silently corrupting a chart.
+
+As everywhere else in this schema, **no readings are stored**. A device with no
+sensors is legitimate — a board awaiting commissioning — and is not an error.
+
 ## Decision: natural string keys, not integer surrogates
 
 `locations.id` and `devices.device_id` are the exact strings the firmware puts
