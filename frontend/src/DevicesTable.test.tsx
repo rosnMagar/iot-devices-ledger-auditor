@@ -88,7 +88,7 @@ describe('sorting', () => {
     const headers = screen.getAllByRole('button').map((b) => b.textContent)
 
     // Type and Status are not sortable, so they must not look clickable.
-    expect(headers).toEqual(['Name↕', 'Location↕', 'Last seen▼'])
+    expect(headers).toEqual(['Name↕', 'Location↕', 'Last seen▼'])  // Sensors is not sortable
   })
 
   it('asks for a new column when an inactive header is clicked', async () => {
@@ -124,5 +124,60 @@ describe('sorting', () => {
       'aria-sort',
       'none',
     )
+  })
+})
+
+
+describe('selection', () => {
+  it('reports the clicked device', async () => {
+    const onSelect = vi.fn()
+    renderTable([device({ device_id: 'esp32-07' })], { onSelect })
+
+    await userEvent.click(screen.getByRole('cell', { name: 'esp32-07' }))
+
+    expect(onSelect).toHaveBeenCalledWith('esp32-07')
+  })
+
+  it('is reachable without a mouse', async () => {
+    // The row is the control, so keyboard users need the same affordance.
+    const onSelect = vi.fn()
+    renderTable([device({ device_id: 'esp32-07' })], { onSelect })
+
+    // Sort headers are buttons too, so scope to the row.
+    const row = screen.getAllByRole('button').find((el) => el.tagName === 'TR')!
+    row.focus()
+    await userEvent.keyboard('{Enter}')
+
+    expect(onSelect).toHaveBeenCalledWith('esp32-07')
+  })
+
+  it('announces which row is selected', () => {
+    renderTable(
+      [device({ device_id: 'a' }), device({ device_id: 'b' })],
+      { onSelect: vi.fn(), selectedId: 'b' },
+    )
+    const rows = screen.getAllByRole('button').filter((el) => el.tagName === 'TR')
+
+    expect(rows[0]).toHaveAttribute('aria-pressed', 'false')
+    expect(rows[1]).toHaveAttribute('aria-pressed', 'true')
+  })
+
+  it('stays a plain table when selection is not offered', () => {
+    renderTable([device()])
+    expect(screen.queryAllByRole('button').filter((b) => b.tagName === 'TR')).toHaveLength(0)
+  })
+
+  it('shows how many sensors a device carries', () => {
+    renderTable([device({ device_id: 'multi', sensor_count: 3,
+                          sensor_types: ['camera', 'temperature'] })])
+    const row = within(rowFor('multi'))
+
+    expect(row.getByText('3')).toBeInTheDocument()
+    expect(row.getByTitle('camera, temperature')).toBeInTheDocument()
+  })
+
+  it('shows 0 rather than blank for a device with no sensors', () => {
+    renderTable([device({ device_id: 'bare' })])
+    expect(within(rowFor('bare')).getByText('0')).toBeInTheDocument()
   })
 })

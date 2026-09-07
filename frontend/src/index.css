@@ -1,0 +1,14 @@
+/* Two columns is only right when there is room. Below this the panel would be
+   narrower than its own charts, so the table and panel stack instead. */
+@media (max-width: 1100px) {
+  .panel-grid {
+    display: block !important;
+  }
+  .panel-grid > aside {
+    border-left: none !important;
+    border-top: 1px solid #ddd;
+    padding-left: 0 !important;
+    margin-top: 1.5rem;
+    padding-top: 1rem;
+  }
+}
