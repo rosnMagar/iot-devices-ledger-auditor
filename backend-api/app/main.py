@@ -1,4 +1,5 @@
 import os
+import re
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from typing import Annotated
@@ -9,7 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.activity import ACTIVE_WINDOW_SECONDS, LedgerActivity
+from app.activity import ACTIVE_WINDOW_SECONDS, HISTORY_LIMIT, LedgerActivity
 from app.db import get_session, init_db
 from app.models import Device, Sensor
 
@@ -200,6 +201,65 @@ async def device_sensors(
         "sensors": views + unregistered,
         "count": len(views) + len(unregistered),
         "unregistered_count": len(unregistered),
+        "ledger_reachable": ledger_activity.reachable,
+    }
+
+
+def _parse_since(raw: str | None) -> datetime | None:
+    if raw is None:
+        return None
+    try:
+        parsed = datetime.fromisoformat(raw)
+    except ValueError:
+        # An unencoded "+" in a query string decodes to a space, so a correct
+        # ISO timestamp like 2026-09-07T11:55:00+00:00 arrives with its offset
+        # mangled. Repair only that shape — a space is also a legal ISO
+        # date/time separator, so a blanket replacement would break real values.
+        repaired = re.sub(r"\s(\d{2}:?\d{2})$", r"+\1", raw)
+        try:
+            parsed = datetime.fromisoformat(repaired)
+        except ValueError:
+            raise HTTPException(
+                status_code=400,
+                detail=f"since must be an ISO 8601 timestamp (got {raw!r})",
+            ) from None
+    # A naive value would compare against aware timestamps and raise; treat it
+    # as UTC, matching how the ledger's own timestamps are read.
+    return parsed.replace(tzinfo=timezone.utc) if parsed.tzinfo is None else parsed
+
+
+@app.get("/readings")
+async def readings(
+    session: Annotated[Session, Depends(get_session)],
+    device_id: str,
+    sensor_id: str | None = None,
+    since: str | None = None,
+    limit: int = HISTORY_LIMIT,
+):
+    """Recent readings for a device, oldest first — the history a chart draws
+    before anything new arrives over the live feed."""
+    if session.get(Device, device_id) is None:
+        raise HTTPException(status_code=404, detail=f"no such device: {device_id!r}")
+    if limit < 1 or limit > HISTORY_LIMIT:
+        raise HTTPException(
+            status_code=400,
+            detail=f"limit must be between 1 and {HISTORY_LIMIT} (got {limit})",
+        )
+    cutoff = _parse_since(since)
+
+    await ledger_activity.refresh()
+    series = ledger_activity.readings(device_id, sensor_id, cutoff, limit)
+
+    return {
+        "device_id": device_id,
+        "sensor_id": sensor_id,
+        "series": series,
+        "count": len(series),
+        "limit": limit,
+        # History is a bounded cache, not storage — older readings are still in
+        # the chain, they are simply not served here.
+        "history_limit": HISTORY_LIMIT,
+        "truncated": len(series) >= limit,
         "ledger_reachable": ledger_activity.reachable,
     }
 

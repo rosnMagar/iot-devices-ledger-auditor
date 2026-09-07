@@ -145,3 +145,49 @@ what the dashboard panel calls on first paint — the full series is `/readings`
 `GET /devices` also carries a per-device `sensor_count` and sorted
 `sensor_types` summary, so the table can show what a board carries without a
 request per row.
+
+## `GET /readings`
+
+Recent readings for a device, oldest first (IOT-62) — the history a chart draws
+before anything arrives over the live feed.
+
+```
+GET /readings?device_id=esp32-03&sensor_id=acce-0&since=<iso>&limit=500
+```
+
+```json
+{
+  "device_id": "esp32-03", "sensor_id": "acce-0",
+  "series": [
+    {"sensor_id": "acce-0", "sensor_type": "accelerometer",
+     "value": [-0.7, 0.41, 9.96], "unit": "m_s2", "seq": 1,
+     "at": "2026-09-07T20:07:26+00:00"}
+  ],
+  "count": 6, "limit": 500, "history_limit": 500,
+  "truncated": false, "ledger_reachable": true
+}
+```
+
+- **Omit `sensor_id`** to get every sensor on the device, interleaved by time —
+  one request backs a whole panel.
+- `value` arrives unchanged: a number, a `[x, y, z]` vector, or `null` when the
+  sensor reported and the read failed (ADR 0010). A chart breaks the line on
+  `null` rather than plotting zero.
+- `CAMERA_EVENT` blocks are not readings and never appear here (ADR 0011).
+  Blocks with malformed or missing metadata are skipped, not fatal.
+- `truncated` says the series hit `limit`. Trimming takes the **newest** end,
+  because a chart wants the recent tail.
+- Unknown device → `404`. A `limit` outside `1..history_limit`, or an
+  unparseable `since`, → `400`.
+
+### The ceiling
+
+Readings are served from a **bounded in-memory cache**, not from storage:
+`READING_HISTORY_LIMIT` (default 500) per sensor. Older readings are still in
+the chain — they are simply not served here. The cache is rebuilt from the full
+chain on process start, since the ledger cursor begins at 0.
+
+This is the MVP tradeoff. Serving arbitrary history would mean re-scanning a
+chain that grows without limit on every request; a bounded cache keeps both
+memory and latency flat. A real time-series store is the answer if deeper
+history is ever needed.
