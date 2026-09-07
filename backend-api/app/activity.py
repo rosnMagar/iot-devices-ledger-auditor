@@ -30,6 +30,8 @@ class LedgerActivity:
     def __init__(self, base_url: str | None = None) -> None:
         self._base_url = (base_url or STORAGE_CORE_URL).rstrip("/")
         self._last_seen: dict[str, datetime] = {}
+        # (device_id, sensor_id) -> the most recent reading seen for it.
+        self._latest: dict[tuple[str, str], dict] = {}
         self._next_index = 0
         self._reachable = True
 
@@ -97,9 +99,17 @@ class LedgerActivity:
         self._reachable = True
         self._consume(payload)
 
+    def latest_reading(self, device_id: str, sensor_id: str) -> dict | None:
+        return self._latest.get((device_id, sensor_id))
+
+    def sensors_seen(self, device_id: str) -> set[str]:
+        # Sensor ids the ledger has reported for this device, registered or not.
+        return {sid for (did, sid) in self._latest if did == device_id}
+
     def _consume(self, payload: dict) -> None:
         for block in payload.get("blocks", []):
-            actor = block.get("event", {}).get("actor")
+            event = block.get("event", {})
+            actor = event.get("actor")
             if not actor:
                 continue
             timestamp = _parse_timestamp(block.get("timestamp", ""))
@@ -109,9 +119,37 @@ class LedgerActivity:
             current = self._last_seen.get(actor)
             if current is None or timestamp > current:
                 self._last_seen[actor] = timestamp
+            self._consume_reading(actor, event, timestamp)
 
         # Resume from chain_length, not len(blocks) — a truncated response would
         # otherwise re-read the tail forever.
         chain_length = payload.get("chain_length")
         if isinstance(chain_length, int) and chain_length >= 0:
             self._next_index = chain_length
+
+    def _consume_reading(self, actor: str, event: dict, timestamp: datetime) -> None:
+        # Only measurements. CAMERA_EVENTs carry no value (ADR 0011), and blocks
+        # written before ADR 0010 conform to nothing — both are skipped rather
+        # than being coerced into a reading.
+        if event.get("event_type") != "SENSOR_READING":
+            return
+        metadata = event.get("metadata")
+        if not isinstance(metadata, dict):
+            return
+        sensor_id = metadata.get("sensor_id")
+        if not isinstance(sensor_id, str) or not sensor_id:
+            return
+
+        key = (actor, sensor_id)
+        previous = self._latest.get(key)
+        if previous is not None and previous["at"] > timestamp:
+            return  # out-of-order delivery must not rewind the latest reading
+        self._latest[key] = {
+            "sensor_id": sensor_id,
+            "sensor_type": metadata.get("sensor_type"),
+            # None is a real, meaningful value here: the sensor failed (ADR 0010).
+            "value": metadata.get("value"),
+            "unit": metadata.get("unit"),
+            "seq": metadata.get("seq"),
+            "at": timestamp,
+        }

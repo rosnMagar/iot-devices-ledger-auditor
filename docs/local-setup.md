@@ -100,8 +100,14 @@ docker compose exec -T -e SIM_CONFIRM=1 backend-api \
     python - < backend-api/tools/simulate_readings.py
 ```
 
-Tunables, all environment variables: `SIM_DEVICES` (5), `SIM_INTERVAL` (10s),
-`SIM_DURATION` (300s), `SIM_FAILURE_RATE` (0.02), `SIM_SEED` (unset = random).
+It models multi-sensor boards: temperature, humidity, pressure, a 3-axis
+accelerometer and a camera, each on **its own interval** — the accelerometer
+reports every 2s while humidity waits 30s. Sensors fail independently, and a
+camera emits `CAMERA_EVENT`s only; no frame ever enters a block (ADR 0011).
+
+Tunables, all environment variables: `SIM_DEVICES` (4), `SIM_DURATION` (300s),
+`SIM_TICK` (1s scheduler tick), `SIM_FAILURE_RATE` (0.02), `SIM_SEED`
+(unset = random).
 
 **`SIM_CONFIRM=1` is mandatory.** Every reading is appended to an immutable hash
 chain and can never be removed — there is no undo. The script also refuses to run

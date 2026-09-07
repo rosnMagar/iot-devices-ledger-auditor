@@ -1,5 +1,5 @@
 # Dev tool. Stands in for the ESP32 fleet (IOT-30...33, blocked on hardware) so
-# the live feed and charts have data to show. Payload shape is ADR 0009.
+# the live feed and charts have data to show. Payload shape is ADR 0010.
 #
 # Runs inside the backend-api container, which is the only place that can reach
 # both the devices DB and storage-core:
@@ -20,18 +20,48 @@ import urllib.request
 from dataclasses import dataclass, field
 
 STORAGE_CORE_URL = os.environ.get("STORAGE_CORE_URL", "http://storage-core:8080")
-DEVICE_COUNT = int(os.environ.get("SIM_DEVICES", "5"))
-INTERVAL_SECONDS = float(os.environ.get("SIM_INTERVAL", "10"))
+DEVICE_COUNT = int(os.environ.get("SIM_DEVICES", "4"))
 DURATION_SECONDS = float(os.environ.get("SIM_DURATION", "300"))
 FAILURE_RATE = float(os.environ.get("SIM_FAILURE_RATE", "0.02"))
+TICK_SECONDS = float(os.environ.get("SIM_TICK", "1"))
 SEED = os.environ.get("SIM_SEED")
 
-# Plausible indoor ranges. A reading pinned to a bound is still a real reading,
-# so these clamp rather than resample.
-CELSIUS_RANGE = (2.0, 32.0)
-HUMIDITY_RANGE = (15.0, 85.0)
-
 LOCATIONS = [("warehouse-a", "Warehouse A"), ("cold-store", "Cold Store")]
+
+
+@dataclass(frozen=True)
+class SensorSpec:
+    # One kind of sensor: how it drifts, what it reports, and how often. Sensors
+    # on the same board run on their own clocks (ADR 0010) — a camera does not
+    # wait for a thermometer.
+    sensor_type: str
+    unit: str
+    step: float
+    bounds: tuple[float, float]
+    interval: float
+    vector: bool = False
+
+
+SPECS = {
+    "temperature": SensorSpec("temperature", "celsius", 0.4, (2.0, 32.0), 10.0),
+    "humidity": SensorSpec("humidity", "percent", 1.2, (15.0, 85.0), 30.0),
+    "pressure": SensorSpec("pressure", "hpa", 0.6, (950.0, 1050.0), 30.0),
+    # Fast and vector-valued, so both edges of the contract get exercised.
+    "accelerometer": SensorSpec("accelerometer", "m_s2", 0.8, (-20.0, 20.0), 2.0, vector=True),
+    # No readings at all — see emit_camera_event and ADR 0011.
+    "camera": SensorSpec("camera", "stream", 0.0, (0.0, 0.0), 60.0),
+}
+
+
+@dataclass
+class SensorState:
+    device_id: str
+    sensor_id: str
+    spec: SensorSpec
+    value: float | list[float]
+    baseline: float
+    seq: int = 0
+    due_at: float = 0.0
 
 
 @dataclass
@@ -39,68 +69,121 @@ class DeviceState:
     device_id: str
     location_id: str
     device_type: str
-    celsius: float
-    humidity_pct: float
-    # Per-device baseline the walk is pulled back towards, so a long run does
-    # not wander off into nonsense.
-    celsius_baseline: float = 0.0
-    humidity_baseline: float = 0.0
-    seq: int = field(default=0)
+    sensors: list[SensorState] = field(default_factory=list)
+
+
+def _sensor_kinds(index: int) -> list[str]:
+    # Deliberately uneven: a bare board, a two-sensor board, a board with two
+    # thermometers, and a camera board. A fleet where every device is identical
+    # would not exercise the panel.
+    return [
+        ["temperature", "humidity"],
+        ["temperature", "humidity", "pressure"],
+        ["temperature", "temperature", "accelerometer"],
+        ["temperature", "camera"],
+    ][index % 4]
 
 
 def build_fleet(count: int) -> list[DeviceState]:
     fleet = []
     for i in range(count):
         location_id, _ = LOCATIONS[i % len(LOCATIONS)]
-        # Cold store really is colder; a chart where every device sits on the
-        # same line demonstrates nothing.
-        base_c = 4.0 if location_id == "cold-store" else 21.0
-        base_h = 70.0 if location_id == "cold-store" else 45.0
-        celsius = base_c + random.uniform(-1.0, 1.0)
-        humidity = base_h + random.uniform(-3.0, 3.0)
-        fleet.append(
-            DeviceState(
-                device_id=f"esp32-{i + 1:02d}",
-                location_id=location_id,
-                device_type="DHT22" if i % 2 == 0 else "BME280",
-                celsius=celsius,
-                humidity_pct=humidity,
-                celsius_baseline=base_c,
-                humidity_baseline=base_h,
-            )
+        device = DeviceState(
+            device_id=f"esp32-{i + 1:02d}",
+            location_id=location_id,
+            device_type="ESP32",
         )
+        # A cold store really is colder; a chart where every line overlaps
+        # demonstrates nothing.
+        cold = location_id == "cold-store"
+        seen: dict[str, int] = {}
+        for kind in _sensor_kinds(i):
+            spec = SPECS[kind]
+            n = seen.get(kind, 0)
+            seen[kind] = n + 1
+            # Two sensors of the same kind on one board need distinct ids — the
+            # case the superseded flat payload could not express.
+            sensor_id = f"{kind[:4]}-{n}"
+            baseline = {
+                "temperature": 4.0 if cold else 21.0,
+                "humidity": 70.0 if cold else 45.0,
+                "pressure": 1013.0,
+                "accelerometer": 0.0,
+                "camera": 0.0,
+            }[kind]
+            start: float | list[float] = (
+                [0.0, 0.0, 9.81] if spec.vector else baseline + random.uniform(-1.0, 1.0)
+            )
+            device.sensors.append(
+                SensorState(
+                    device_id=device.device_id,
+                    sensor_id=sensor_id,
+                    spec=spec,
+                    value=start,
+                    baseline=baseline,
+                )
+            )
+        fleet.append(device)
     return fleet
 
 
-def _drift(value: float, baseline: float, step: float, pull: float, bounds) -> float:
-    # Mean-reverting random walk: successive readings are close together the way
-    # real sensor data is. Independent samples would look like noise and would
-    # hide a chart that is silently redrawing from scratch.
+def _drift(value: float, baseline: float, step: float, bounds: tuple[float, float]) -> float:
+    # Mean-reverting random walk: successive readings sit close together the way
+    # real sensor data does. Independent samples would look like noise and would
+    # hide a chart silently redrawing from scratch instead of appending.
     low, high = bounds
-    moved = value + random.uniform(-step, step) + (baseline - value) * pull
+    moved = value + random.uniform(-step, step) + (baseline - value) * 0.05
     return round(min(max(moved, low), high), 2)
 
 
-def advance(device: DeviceState) -> DeviceState:
-    device.celsius = _drift(device.celsius, device.celsius_baseline, 0.4, 0.05, CELSIUS_RANGE)
-    device.humidity_pct = _drift(
-        device.humidity_pct, device.humidity_baseline, 1.2, 0.05, HUMIDITY_RANGE
-    )
-    device.seq += 1
-    return device
+def advance(sensor: SensorState) -> SensorState:
+    spec = sensor.spec
+    if spec.vector:
+        # Gravity sits on z; the other axes wander around zero.
+        current = sensor.value if isinstance(sensor.value, list) else [0.0, 0.0, 9.81]
+        sensor.value = [
+            _drift(current[0], 0.0, spec.step, spec.bounds),
+            _drift(current[1], 0.0, spec.step, spec.bounds),
+            _drift(current[2], 9.81, spec.step, spec.bounds),
+        ]
+    elif spec.sensor_type != "camera":
+        current = sensor.value if isinstance(sensor.value, float) else sensor.baseline
+        sensor.value = _drift(current, sensor.baseline, spec.step, spec.bounds)
+    sensor.seq += 1
+    return sensor
 
 
-def build_event(device: DeviceState, failed: bool) -> dict:
-    # ADR 0009: a failed read is an explicit null, never a missing key, never 0.
+def build_reading(sensor: SensorState, failed: bool) -> dict:
+    # ADR 0010: a failed read is an explicit null, never a missing key, never 0.
+    # One sensor failing says nothing about the others on the same board.
     return {
         "event_type": "SENSOR_READING",
-        "location_id": device.location_id,
-        "actor": device.device_id,
+        "location_id": "",  # filled in by the caller, which knows the device
+        "actor": sensor.device_id,
         "description": "sensor read failed" if failed else "periodic reading",
         "metadata": {
-            "celsius": None if failed else device.celsius,
-            "humidity_pct": None if failed else device.humidity_pct,
-            "seq": device.seq,
+            "sensor_id": sensor.sensor_id,
+            "sensor_type": sensor.spec.sensor_type,
+            "value": None if failed else sensor.value,
+            "unit": sensor.spec.unit,
+            "seq": sensor.seq,
+        },
+    }
+
+
+def build_camera_event(sensor: SensorState, kind: str) -> dict:
+    # ADR 0011: the ledger records events *about* the camera. No frame, still or
+    # clip is ever written into a block.
+    return {
+        "event_type": "CAMERA_EVENT",
+        "location_id": "",
+        "actor": sensor.device_id,
+        "description": kind.replace("_", " "),
+        "metadata": {
+            "sensor_id": sensor.sensor_id,
+            "sensor_type": "camera",
+            "event": kind,
+            "seq": sensor.seq,
         },
     }
 
@@ -132,7 +215,7 @@ def register(fleet: list[DeviceState]) -> None:
     # Imported here, not at module scope: importing app.db builds an engine, and
     # at import time that would create a stray SQLite file during tests.
     from app.db import SessionLocal, init_db
-    from app.models import Device, Location
+    from app.models import Device, Location, Sensor
 
     init_db()
     with SessionLocal() as session:
@@ -149,8 +232,21 @@ def register(fleet: list[DeviceState]) -> None:
                         device_type=device.device_type,
                     )
                 )
+        session.flush()
+        for device in fleet:
+            for sensor in device.sensors:
+                if session.get(Sensor, (device.device_id, sensor.sensor_id)) is None:
+                    session.add(
+                        Sensor(
+                            device_id=device.device_id,
+                            sensor_id=sensor.sensor_id,
+                            sensor_type=sensor.spec.sensor_type,
+                            unit=sensor.spec.unit,
+                        )
+                    )
         session.commit()
-    print(f"registered {len(fleet)} devices across {len(LOCATIONS)} locations")
+    total = sum(len(d.sensors) for d in fleet)
+    print(f"registered {len(fleet)} devices with {total} sensors")
 
 
 def post_event(payload: dict) -> int:
@@ -173,28 +269,43 @@ def main() -> int:
     register(fleet)
 
     print(
-        f"posting to {STORAGE_CORE_URL} every {INTERVAL_SECONDS}s "
-        f"for {DURATION_SECONDS}s — ctrl-c to stop"
+        f"posting to {STORAGE_CORE_URL} for {DURATION_SECONDS}s "
+        f"— each sensor on its own interval, ctrl-c to stop"
     )
-    deadline = time.monotonic() + DURATION_SECONDS
+    started = time.monotonic()
+    deadline = started + DURATION_SECONDS
     posted = failed_posts = 0
 
     while time.monotonic() < deadline:
+        now = time.monotonic()
         for device in fleet:
-            advance(device)
-            failed = random.random() < FAILURE_RATE
-            try:
-                post_event(build_event(device, failed))
-                posted += 1
-            except (urllib.error.URLError, OSError) as exc:
-                # Keep going: storage-core restarting mid-run should not end the
-                # simulation, it should show up as a gap the way a real one would.
-                failed_posts += 1
-                print(f"  post failed for {device.device_id}: {exc}", file=sys.stderr)
-        print(f"  {posted} readings posted ({failed_posts} failed)", flush=True)
-        time.sleep(INTERVAL_SECONDS)
+            for sensor in device.sensors:
+                if now < sensor.due_at:
+                    continue
+                sensor.due_at = now + sensor.spec.interval
+                advance(sensor)
 
-    print(f"done: {posted} readings posted, {failed_posts} failed")
+                if sensor.spec.sensor_type == "camera":
+                    kind = "stream_online" if sensor.seq == 1 else "motion_detected"
+                    payload = build_camera_event(sensor, kind)
+                else:
+                    # Each sensor fails on its own — one null must not null the
+                    # others on the same board.
+                    payload = build_reading(sensor, random.random() < FAILURE_RATE)
+
+                payload["location_id"] = device.location_id
+                try:
+                    post_event(payload)
+                    posted += 1
+                except (urllib.error.URLError, OSError) as exc:
+                    # Keep going: storage-core restarting mid-run should show up
+                    # as a gap, the way a real fleet's outage would.
+                    failed_posts += 1
+                    print(f"  post failed for {sensor.sensor_id}: {exc}", file=sys.stderr)
+        print(f"  {posted} events posted ({failed_posts} failed)", flush=True)
+        time.sleep(TICK_SECONDS)
+
+    print(f"done: {posted} events posted, {failed_posts} failed")
     return 0
 
 
