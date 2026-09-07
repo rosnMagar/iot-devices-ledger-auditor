@@ -19,6 +19,12 @@ registered like any other and produces ledger *events* — `stream_online`,
 `stream_offline`, `motion_detected`, `snapshot_taken` — but the media itself
 travels out of band.
 
+These use `event_type: "CAMERA_EVENT"`, not `SENSOR_READING`, and carry
+`{sensor_id, sensor_type: "camera", event, seq}`. `SENSOR_READING` keeps its
+meaning: a measurement with a `value` and a `unit`. A camera has neither, and
+forcing it into that shape would mean inventing a null measurement for every
+event.
+
 - **Live view**: the browser opens the stream directly (MJPEG over HTTP for the PoC; WebRTC or HLS if latency and scale demand it later). The stream does not pass through storage-core.
 - **Stills worth keeping**: written to object storage; the block records the object key and the SHA-256 of the bytes.
 - **Recorded video**: deferred and optional (IOT-77). The current scope is **live only — nothing is recorded or stored**. If recording is added later it is stored compressed and retained for 24 hours, then deleted automatically.
