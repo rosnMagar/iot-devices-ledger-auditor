@@ -11,6 +11,7 @@ As an operator, I want the auditor to run on its own so that anomalies are found
 ## Acceptance criteria
 - [ ] EventBridge schedule wired in `template.yaml`
 - [ ] Interval configurable, with the chosen default justified
+- [ ] If recording is ever enabled (IOT-77), reconcile the interval with its retention window
 - [ ] Timeout and memory set deliberately, not left at defaults
 - [ ] Deploy documented in `docs/deployment.md`
 - [ ] A manual invoke path retained for testing

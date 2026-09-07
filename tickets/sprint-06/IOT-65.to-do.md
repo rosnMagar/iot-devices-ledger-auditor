@@ -10,8 +10,9 @@ As a developer, I want the anomaly rules written down so that the auditor has so
 
 ## Acceptance criteria
 - [ ] Each rule stated with its threshold and the reasoning behind it
+- [ ] Rules are expressed per `sensor_type`, not per device (ADR 0010)
 - [ ] Chain-integrity failure (`GET /verify`) is treated as its own class of alert
-- [ ] ADR `0010-anomaly-detection-rules.md` records rules and rejected options
+- [ ] ADR `0012-anomaly-detection-rules.md` records rules and rejected options
 - [ ] `docs/auditor.md` "Open Questions" updated
 
 ## Implementation notes

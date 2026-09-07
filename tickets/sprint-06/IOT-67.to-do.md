@@ -13,6 +13,7 @@ As an operator, I want a written incident report so that I can understand an ano
 - [ ] No LLM call when there are no findings
 - [ ] API key from environment/secret, never committed
 - [ ] Failures degrade to the raw findings rather than losing the alert
+- [ ] A finding about a camera references its events, not footage — nothing is recorded
 - [ ] Bounded token usage and a timeout
 - [ ] Tests use a stubbed client, not the live API
 

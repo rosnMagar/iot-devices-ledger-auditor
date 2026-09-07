@@ -1,6 +1,11 @@
 # 0009 — SENSOR_READING metadata payload
 
-Status: Accepted (implementation: sprint-05, IOT-58)
+Status: Superseded by [0010](0010-sensors-and-per-sensor-readings.md)
+
+> Superseded before any production data was written under it. Devices turned out
+> to carry multiple, independent sensors, which a flat per-device payload cannot
+> express. The rules below about units, explicit `null`s and where validation
+> belongs were all carried forward into 0010 — only the field layout changed.
 
 ## Context
 
