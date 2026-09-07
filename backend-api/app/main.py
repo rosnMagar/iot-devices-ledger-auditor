@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 
 from app.activity import ACTIVE_WINDOW_SECONDS, LedgerActivity
 from app.db import get_session, init_db
-from app.models import Device
+from app.models import Device, Sensor
 
 
 @asynccontextmanager
@@ -123,6 +123,10 @@ async def devices(
             # null = never reported; a timestamp = went quiet.
             "last_seen": ledger_activity.last_seen(device.device_id),
             "status": ledger_activity.status(device.device_id),
+            # Summary only — the panel fetches the detail per device. Sorted so
+            # the response is deterministic.
+            "sensor_count": len(device.sensors),
+            "sensor_types": sorted({s.sensor_type for s in device.sensors}),
         }
         for device in session.execute(query).scalars().all()
     ]
@@ -143,6 +147,59 @@ async def devices(
         "sort": sort,
         "order": order,
         "active_window_seconds": ACTIVE_WINDOW_SECONDS,
+        "ledger_reachable": ledger_activity.reachable,
+    }
+
+
+def _sensor_view(sensor: Sensor) -> dict:
+    latest = ledger_activity.latest_reading(sensor.device_id, sensor.sensor_id)
+    return {
+        "sensor_id": sensor.sensor_id,
+        "sensor_type": sensor.sensor_type,
+        # The unit the sensor is expected to report; the reading below carries
+        # the authoritative one, so a swapped probe is visible (ADR 0010).
+        "unit": sensor.unit,
+        "registered": True,
+        "latest": latest,
+    }
+
+
+@app.get("/devices/{device_id}/sensors")
+async def device_sensors(
+    device_id: str,
+    session: Annotated[Session, Depends(get_session)],
+):
+    device = session.get(Device, device_id)
+    if device is None:
+        raise HTTPException(status_code=404, detail=f"no such device: {device_id!r}")
+
+    await ledger_activity.refresh()
+
+    sensors = sorted(device.sensors, key=lambda s: s.sensor_id)
+    views = [_sensor_view(sensor) for sensor in sensors]
+    registered = {sensor.sensor_id for sensor in sensors}
+
+    # Reported by the ledger but never registered — the same orphan case IOT-35
+    # tracks for devices, and the same cause: a typo in a firmware config.
+    # Reported rather than hidden, because that is how the typo gets found.
+    unregistered = [
+        {
+            "sensor_id": sensor_id,
+            "sensor_type": (ledger_activity.latest_reading(device_id, sensor_id) or {}).get(
+                "sensor_type"
+            ),
+            "unit": None,
+            "registered": False,
+            "latest": ledger_activity.latest_reading(device_id, sensor_id),
+        }
+        for sensor_id in sorted(ledger_activity.sensors_seen(device_id) - registered)
+    ]
+
+    return {
+        "device_id": device_id,
+        "sensors": views + unregistered,
+        "count": len(views) + len(unregistered),
+        "unregistered_count": len(unregistered),
         "ledger_reachable": ledger_activity.reachable,
     }
 
