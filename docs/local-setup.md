@@ -85,6 +85,31 @@ npm test      # vitest, once
 npm run test:watch
 ```
 
+## Simulated sensor readings (dev tool)
+
+Firmware is blocked on hardware (IOT-30…33), so `backend-api/tools/simulate_readings.py`
+stands in for the fleet. It registers devices/locations and posts `SENSOR_READING`
+events matching [ADR 0009](decisions/0009-sensor-reading-payload.md).
+
+It runs inside the backend-api container — the only place that can reach both the
+devices database and storage-core — and is piped in over stdin, so it does not
+need to be baked into the image:
+
+```bash
+docker compose exec -T -e SIM_CONFIRM=1 backend-api \
+    python - < backend-api/tools/simulate_readings.py
+```
+
+Tunables, all environment variables: `SIM_DEVICES` (5), `SIM_INTERVAL` (10s),
+`SIM_DURATION` (300s), `SIM_FAILURE_RATE` (0.02), `SIM_SEED` (unset = random).
+
+**`SIM_CONFIRM=1` is mandatory.** Every reading is appended to an immutable hash
+chain and can never be removed — there is no undo. The script also refuses to run
+when the target looks like production (a non-localhost `CORS_ORIGINS`) unless
+`SIM_FORCE=1` is set as well.
+
+Registration is idempotent, so re-running it will not duplicate devices.
+
 Auditor Lambda (TypeScript):
 ```bash
 cd auditor
