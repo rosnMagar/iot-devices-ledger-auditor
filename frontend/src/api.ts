@@ -8,6 +8,9 @@ export interface Device {
   // null = never reported. A timestamp = reported once, then possibly went quiet.
   last_seen: string | null
   status: 'active' | 'inactive'
+  // Summary from IOT-73; optional so an older API response still renders.
+  sensor_count?: number
+  sensor_types?: string[]
 }
 
 export interface DevicesResponse {

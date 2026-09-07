@@ -1,10 +1,14 @@
+import { useState } from 'react'
+
 import DevicesTable from './DevicesTable'
+import SensorPanel from './SensorPanel'
 import FilterControls from './FilterControls'
 import { isFiltered } from './filters'
 import type { DeviceFilters } from './filters'
 import type { SortKey } from './query'
 import { toggleSort } from './query'
 import { useDevices, useFleetOptions } from './useDevices'
+import { useSensorPanel } from './useSensorPanel'
 import { useUrlQuery } from './useUrlQuery'
 
 // No localhost fallback. Vite inlines this at build time, so if it's missing the
@@ -12,12 +16,27 @@ import { useUrlQuery } from './useUrlQuery'
 // machine. Better to say so on the page than to look broken for no visible reason.
 const API = (import.meta.env.VITE_API_BASE_URL as string | undefined)?.trim()
 
-const page = { fontFamily: 'monospace', padding: '2rem', maxWidth: '900px' } as const
+const page = { fontFamily: 'monospace', padding: '2rem' } as const
+// Table left, panel right. The panel takes half the screen so charts are big
+// enough to read; minmax(0, ...) lets a wide table scroll instead of forcing
+// the grid wider than the viewport.
+const columns = {
+  display: 'grid',
+  gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)',
+  gap: '2rem',
+  alignItems: 'start',
+} as const
+// One column when nothing is selected, and on a narrow screen the media query
+// below collapses to one regardless.
+const singleColumn = { display: 'block' } as const
+const tableColumn = { minWidth: 0, overflowX: 'auto' } as const
 
 export default function App() {
   const [query, setQuery] = useUrlQuery()
+  const [selectedId, setSelectedId] = useState<string | null>(null)
   const { data, loading, error } = useDevices(API, query)
   const options = useFleetOptions(API)
+  const panel = useSensorPanel(API, selectedId)
 
   // Selects and header clicks are discrete events, so there is nothing to
   // debounce — one change is one request.
@@ -72,18 +91,40 @@ export default function App() {
           : null}
       </p>
 
-      {data && (
-        <DevicesTable
-          devices={data.devices}
-          sort={query.sort}
-          order={query.order}
-          onSort={sortBy}
-          emptyMessage={
-            isFiltered(query)
-              ? 'No devices match these filters.'
-              : 'No devices registered yet.'
-          }
-        />
+      <div style={selectedId === null ? singleColumn : columns} className="panel-grid">
+        <div style={tableColumn}>
+          {data && (
+            <DevicesTable
+              devices={data.devices}
+              sort={query.sort}
+              order={query.order}
+              onSort={sortBy}
+              selectedId={selectedId}
+              onSelect={setSelectedId}
+              emptyMessage={
+                isFiltered(query)
+                  ? 'No devices match these filters.'
+                  : 'No devices registered yet.'
+              }
+            />
+          )}
+        </div>
+
+        {selectedId !== null && (
+          <SensorPanel
+            deviceId={selectedId}
+            sensors={panel.sensors}
+            readings={panel.readings}
+            loading={panel.loading}
+            error={panel.error}
+          />
+        )}
+      </div>
+
+      {data && data.devices.length > 0 && selectedId === null && (
+        <p style={{ color: '#888', marginTop: '1rem' }}>
+          Select a device to see its sensors.
+        </p>
       )}
     </main>
   )
