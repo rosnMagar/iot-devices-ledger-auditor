@@ -11,6 +11,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.activity import ACTIVE_WINDOW_SECONDS, HISTORY_LIMIT, LedgerActivity
+from app.blockfeed import BlockFeed
 from app.db import get_session, init_db
 from app.models import Device, Sensor
 
@@ -19,13 +20,23 @@ from app.models import Device, Sensor
 async def lifespan(app: FastAPI):
     # Lifespan, not @app.on_event("startup") — FastAPI deprecates that.
     init_db()
-    yield
+    # Never awaited to completion: it reconnects forever until stopped. If
+    # storage-core is down the app still starts — a missing live feed is
+    # degraded, not fatal.
+    await block_feed.start()
+    try:
+        yield
+    finally:
+        await block_feed.stop()
 
 
 app = FastAPI(title="backend-api (stub)", lifespan=lifespan)
 
 # One cache per process; safe to share across requests.
 ledger_activity = LedgerActivity()
+
+# One upstream subscription per process. Fanning out to browsers is IOT-61.
+block_feed = BlockFeed()
 
 # Comma-separated list of allowed browser origins. The default is the Vite dev
 # server and is only ever right locally — in production this is set by the
@@ -50,6 +61,18 @@ STORAGE_CORE_URL = os.environ.get("STORAGE_CORE_URL", "http://localhost:8080")
 @app.get("/health")
 async def health():
     return {"status": "ok"}
+
+
+@app.get("/feed/status")
+async def feed_status():
+    # Counters, not just a flag: "connected right now" hides a feed that is
+    # flapping, which looks healthy on any single check.
+    return {
+        "connected": block_feed.connected,
+        "connects": block_feed.connects,
+        "blocks_received": block_feed.blocks_received,
+        "blocks_dropped": block_feed.blocks_dropped,
+    }
 
 
 @app.get("/blocks")

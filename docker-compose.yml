@@ -21,6 +21,8 @@ services:
       - "8000:8000"
     environment:
       STORAGE_CORE_URL: ${STORAGE_CORE_URL:-http://storage-core:8080}
+      # The live block feed is a second listener on 8081, not a path on 8080.
+      STORAGE_CORE_WS_URL: ${STORAGE_CORE_WS_URL:-ws://storage-core:8081/blocks}
       DATABASE_URL: ${DATABASE_URL:-sqlite:////app/data/app.db}
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173}
       ACTIVE_WINDOW_SECONDS: ${ACTIVE_WINDOW_SECONDS:-300}
