@@ -1,4 +1,7 @@
 fastapi>=0.115
 uvicorn[standard]>=0.32
 httpx>=0.28
+# Declared explicitly although uvicorn[standard] already pulls it in: the live
+# block feed depends on it directly, and a transitive extra is not a promise.
+websockets>=13
 sqlalchemy>=2.0

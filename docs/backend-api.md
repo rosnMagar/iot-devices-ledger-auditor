@@ -191,3 +191,23 @@ This is the MVP tradeoff. Serving arbitrary history would mean re-scanning a
 chain that grows without limit on every request; a bounded cache keeps both
 memory and latency flat. A real time-series store is the answer if deeper
 history is ever needed.
+
+## Live block feed
+
+backend-api holds one persistent WebSocket subscription to storage-core's
+`ws://<host>:8081/blocks` (IOT-60), configured by `STORAGE_CORE_WS_URL`. This is
+the first consumer of the broadcaster built in IOT-27/28.
+
+- **One upstream connection per process.** Fanning out to browsers is IOT-61.
+- **Reconnects with exponential backoff and jitter** (0.5s to 30s). The ceiling
+  matters more than the floor: a tight loop against a dead storage-core would
+  spin a core and flood the logs. Jitter stops several backends reconnecting in
+  lockstep after a restart.
+- **storage-core being down at startup is not fatal.** The app starts and the
+  feed retries; a missing live feed is degraded, not broken.
+- **A `{"type":"lagged","dropped":N}` notice is not a block.** Parsing it as one
+  would invent a block with no index and corrupt every consumer downstream.
+
+`GET /feed/status` reports `connected`, `connects`, `blocks_received` and
+`blocks_dropped`. The counters matter as much as the flag: "connected right now"
+hides a feed that is flapping, which looks healthy on any single check.
