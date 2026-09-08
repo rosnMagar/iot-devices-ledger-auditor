@@ -211,3 +211,34 @@ the first consumer of the broadcaster built in IOT-27/28.
 `GET /feed/status` reports `connected`, `connects`, `blocks_received` and
 `blocks_dropped`. The counters matter as much as the flag: "connected right now"
 hides a feed that is flapping, which looks healthy on any single check.
+
+## `WS /ws/blocks`
+
+Live blocks for the dashboard (IOT-61). One upstream subscription (IOT-60)
+serves every connected browser.
+
+```json
+{"type": "block",
+ "block": { ...the ledger block... },
+ "device": {"device_type": "ESP32", "location_id": "cold-store", "registered": true}}
+```
+
+A lag notice is forwarded as `{"type": "lagged", "dropped": N}` rather than
+swallowed — a dashboard that silently missed blocks would show a stale chart
+that looks live.
+
+- **`device` is enriched from the registry**, because a raw block names an actor,
+  not a device. It is `null` when the ledger reports an actor the registry does
+  not know — the same orphan case IOT-35 and IOT-73 surface. The registry's
+  `location_id` is authoritative and may differ from the one in the block.
+- Registry lookups are cached for 30s, including misses. A database round trip
+  per block would make the feed's cost scale with traffic, and an unregistered
+  actor posting continuously would otherwise hammer it.
+- **Each browser has a bounded queue (64 frames) that drops its oldest entry
+  when full.** The upstream reader never awaits a browser, so one slow client
+  cannot stall the feed for everyone. This mirrors storage-core's own
+  `Subscription`, for the same reason.
+- A slow client is not disconnected — it just misses frames. The newest are
+  kept, since a live dashboard wants current state, not an old backlog.
+
+`GET /feed/status` also reports `browser_subscribers` and `frames_broadcast`.

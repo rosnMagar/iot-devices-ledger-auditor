@@ -1,11 +1,12 @@
+import asyncio
 import os
 import re
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 from datetime import datetime, timezone
 from typing import Annotated
 
 import httpx
-from fastapi import Depends, FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -13,6 +14,7 @@ from sqlalchemy.orm import Session
 from app.activity import ACTIVE_WINDOW_SECONDS, HISTORY_LIMIT, LedgerActivity
 from app.blockfeed import BlockFeed
 from app.db import get_session, init_db
+from app.hub import BrowserHub, RegistryEnricher
 from app.models import Device, Sensor
 
 
@@ -35,8 +37,26 @@ app = FastAPI(title="backend-api (stub)", lifespan=lifespan)
 # One cache per process; safe to share across requests.
 ledger_activity = LedgerActivity()
 
-# One upstream subscription per process. Fanning out to browsers is IOT-61.
+# One upstream subscription per process, fanned out to every browser.
 block_feed = BlockFeed()
+hub = BrowserHub()
+enricher = RegistryEnricher()
+
+
+def _on_block(block: dict) -> None:
+    # Synchronous and non-blocking: this runs on the upstream reader, so any
+    # await here would let one slow browser stall the feed for everyone.
+    hub.broadcast(enricher.enrich(block))
+
+
+def _on_lagged(dropped: int) -> None:
+    # Passed through rather than swallowed. A dashboard that silently missed
+    # blocks would show a stale chart that looks live.
+    hub.broadcast({"type": "lagged", "dropped": dropped})
+
+
+block_feed.on_block(_on_block)
+block_feed.on_lagged(_on_lagged)
 
 # Comma-separated list of allowed browser origins. The default is the Vite dev
 # server and is only ever right locally — in production this is set by the
@@ -63,6 +83,40 @@ async def health():
     return {"status": "ok"}
 
 
+@app.websocket("/ws/blocks")
+async def ws_blocks(websocket: WebSocket):
+    """Live blocks for the dashboard. One upstream subscription (IOT-60) serves
+    every connection here."""
+    await websocket.accept()
+    subscription = hub.subscribe()
+
+    async def pump() -> None:
+        while True:
+            await websocket.send_json(await subscription.get())
+
+    async def watch_for_close() -> None:
+        # A browser that closes while we are blocked on the queue would
+        # otherwise go unnoticed until the next block arrives — which, on a
+        # quiet fleet, could be a very long time.
+        while True:
+            await websocket.receive_text()
+
+    tasks = [asyncio.create_task(pump()), asyncio.create_task(watch_for_close())]
+    try:
+        done, pending = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
+        for task in pending:
+            task.cancel()
+        for task in done:
+            with suppress(WebSocketDisconnect, RuntimeError):
+                task.result()
+    except WebSocketDisconnect:
+        pass
+    finally:
+        for task in tasks:
+            task.cancel()
+        hub.unsubscribe(subscription)
+
+
 @app.get("/feed/status")
 async def feed_status():
     # Counters, not just a flag: "connected right now" hides a feed that is
@@ -72,6 +126,8 @@ async def feed_status():
         "connects": block_feed.connects,
         "blocks_received": block_feed.blocks_received,
         "blocks_dropped": block_feed.blocks_dropped,
+        "browser_subscribers": hub.subscriber_count,
+        "frames_broadcast": hub.delivered,
     }
 
 
