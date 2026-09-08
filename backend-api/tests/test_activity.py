@@ -356,3 +356,112 @@ async def test_a_longer_window_keeps_a_slow_reporter_active(monkeypatch) -> None
 
     # 600s ago: inactive at the 300s default, active on a slow duty cycle.
     assert cache.status("esp32-01", now=NOW) == "active"
+
+
+def camera_block(index: int, actor: str, sensor_id: str, event: str,
+                 when: datetime, url: str | None = None) -> dict:
+    metadata = {"sensor_id": sensor_id, "sensor_type": "camera", "event": event, "seq": index}
+    if url is not None:
+        metadata["url"] = url
+    return {
+        "index": index,
+        "timestamp": when.strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "event": {
+            "event_type": "CAMERA_EVENT",
+            "location_id": "loc-1",
+            "actor": actor,
+            "description": event,
+            "metadata": metadata,
+        },
+        "prev_hash": "0" * 64,
+        "hash": "a" * 64,
+    }
+
+
+@pytest.mark.asyncio()
+async def test_a_camera_event_is_not_a_reading() -> None:
+    # IOT-75 / ADR 0011: a camera has no value, so it must never reach a chart.
+    cache = LedgerActivity()
+    await refresh_with(
+        cache,
+        ledger_transport([{"blocks": [
+            camera_block(1, "esp32-04", "cam-0", "stream_online", NOW,
+                         "http://device.local:8090/stream"),
+        ], "chain_length": 2}]),
+    )
+
+    assert cache.latest_reading("esp32-04", "cam-0") is None
+    assert cache.readings("esp32-04", "cam-0") == []
+    # But it is still activity: the device reported.
+    assert cache.last_seen("esp32-04") == NOW
+
+
+@pytest.mark.asyncio()
+async def test_the_stream_url_comes_from_the_devices_announcement() -> None:
+    cache = LedgerActivity()
+    await refresh_with(
+        cache,
+        ledger_transport([{"blocks": [
+            camera_block(1, "esp32-04", "cam-0", "stream_online", NOW,
+                         "http://device.local:8090/stream"),
+        ], "chain_length": 2}]),
+    )
+
+    state = cache.camera_state("esp32-04", "cam-0")
+    assert state["event"] == "stream_online"
+    assert state["stream_url"] == "http://device.local:8090/stream"
+
+
+@pytest.mark.asyncio()
+async def test_a_later_event_without_a_url_keeps_the_announced_one() -> None:
+    # Otherwise a camera that reports motion loses the address it came online at.
+    cache = LedgerActivity()
+    await refresh_with(
+        cache,
+        ledger_transport([{"blocks": [
+            camera_block(1, "esp32-04", "cam-0", "stream_online",
+                         NOW - timedelta(minutes=5), "http://device.local:8090/stream"),
+            camera_block(2, "esp32-04", "cam-0", "motion_detected", NOW),
+        ], "chain_length": 3}]),
+    )
+
+    state = cache.camera_state("esp32-04", "cam-0")
+    assert state["event"] == "motion_detected"
+    assert state["stream_url"] == "http://device.local:8090/stream"
+
+
+@pytest.mark.asyncio()
+async def test_a_new_announcement_replaces_the_address() -> None:
+    cache = LedgerActivity()
+    await refresh_with(
+        cache,
+        ledger_transport([{"blocks": [
+            camera_block(1, "esp32-04", "cam-0", "stream_online",
+                         NOW - timedelta(minutes=5), "http://old.local:8090/stream"),
+            camera_block(2, "esp32-04", "cam-0", "stream_online", NOW,
+                         "http://new.local:8090/stream"),
+        ], "chain_length": 3}]),
+    )
+
+    assert cache.camera_state("esp32-04", "cam-0")["stream_url"] == "http://new.local:8090/stream"
+
+
+@pytest.mark.asyncio()
+async def test_out_of_order_camera_events_do_not_rewind() -> None:
+    cache = LedgerActivity()
+    await refresh_with(
+        cache,
+        ledger_transport([{"blocks": [
+            camera_block(2, "esp32-04", "cam-0", "motion_detected", NOW),
+            camera_block(1, "esp32-04", "cam-0", "stream_online",
+                         NOW - timedelta(minutes=5), "http://device.local:8090/stream"),
+        ], "chain_length": 3}]),
+    )
+
+    assert cache.camera_state("esp32-04", "cam-0")["event"] == "motion_detected"
+
+
+@pytest.mark.asyncio()
+async def test_an_unknown_camera_has_no_state() -> None:
+    cache = LedgerActivity()
+    assert cache.camera_state("nobody", "cam-0") is None

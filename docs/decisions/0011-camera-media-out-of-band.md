@@ -20,7 +20,11 @@ registered like any other and produces ledger *events* — `stream_online`,
 travels out of band.
 
 These use `event_type: "CAMERA_EVENT"`, not `SENSOR_READING`, and carry
-`{sensor_id, sensor_type: "camera", event, seq}`. `SENSOR_READING` keeps its
+`{sensor_id, sensor_type: "camera", event, seq}`. A `stream_online` event also
+carries `url`: **the device announces where its stream can be watched**. The
+ledger records the address, never the media. This keeps the stream location out
+of the registry schema, and means a device that moves corrects itself on its
+next announcement. `SENSOR_READING` keeps its
 meaning: a measurement with a `value` and a `unit`. A camera has neither, and
 forcing it into that shape would mean inventing a null measurement for every
 event.
