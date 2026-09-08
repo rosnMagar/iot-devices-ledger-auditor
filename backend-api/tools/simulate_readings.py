@@ -25,6 +25,9 @@ DURATION_SECONDS = float(os.environ.get("SIM_DURATION", "300"))
 FAILURE_RATE = float(os.environ.get("SIM_FAILURE_RATE", "0.02"))
 TICK_SECONDS = float(os.environ.get("SIM_TICK", "1"))
 SEED = os.environ.get("SIM_SEED")
+# Where a simulated camera claims its stream lives. The device announces this;
+# the ledger records the address, never the media (ADR 0011).
+CAMERA_STREAM_URL = os.environ.get("SIM_CAMERA_URL", "http://localhost:8090/stream")
 
 LOCATIONS = [("warehouse-a", "Warehouse A"), ("cold-store", "Cold Store")]
 
@@ -173,18 +176,22 @@ def build_reading(sensor: SensorState, failed: bool) -> dict:
 
 def build_camera_event(sensor: SensorState, kind: str) -> dict:
     # ADR 0011: the ledger records events *about* the camera. No frame, still or
-    # clip is ever written into a block.
+    # clip is ever written into a block — only, on coming online, the address
+    # the stream can be watched at.
+    metadata = {
+        "sensor_id": sensor.sensor_id,
+        "sensor_type": "camera",
+        "event": kind,
+        "seq": sensor.seq,
+    }
+    if kind == "stream_online":
+        metadata["url"] = CAMERA_STREAM_URL
     return {
         "event_type": "CAMERA_EVENT",
         "location_id": "",
         "actor": sensor.device_id,
         "description": kind.replace("_", " "),
-        "metadata": {
-            "sensor_id": sensor.sensor_id,
-            "sensor_type": "camera",
-            "event": kind,
-            "seq": sensor.seq,
-        },
+        "metadata": metadata,
     }
 
 

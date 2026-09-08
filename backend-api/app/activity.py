@@ -39,6 +39,9 @@ class LedgerActivity:
         self._latest: dict[tuple[str, str], dict] = {}
         # (device_id, sensor_id) -> bounded history, oldest first.
         self._history: dict[tuple[str, str], deque] = {}
+        # (device_id, sensor_id) -> latest camera event. Separate from readings:
+        # a camera has no value, so it must never reach a chart (ADR 0011).
+        self._camera: dict[tuple[str, str], dict] = {}
         self._next_index = 0
         self._reachable = True
 
@@ -161,9 +164,13 @@ class LedgerActivity:
             self._next_index = chain_length
 
     def _consume_reading(self, actor: str, event: dict, timestamp: datetime) -> None:
-        # Only measurements. CAMERA_EVENTs carry no value (ADR 0011), and blocks
-        # written before ADR 0010 conform to nothing — both are skipped rather
-        # than being coerced into a reading.
+        # A camera has no value and no unit; it reports events (ADR 0011).
+        # Recorded separately so it never enters a chart.
+        if event.get("event_type") == "CAMERA_EVENT":
+            self._consume_camera_event(actor, event, timestamp)
+            return
+        # Blocks written before ADR 0010 conform to nothing — skipped rather
+        # than coerced into a reading.
         if event.get("event_type") != "SENSOR_READING":
             return
         metadata = event.get("metadata")
@@ -190,3 +197,34 @@ class LedgerActivity:
         if key not in self._history:
             self._history[key] = deque(maxlen=HISTORY_LIMIT)
         self._history[key].append(reading)
+
+    def _consume_camera_event(self, actor: str, event: dict, timestamp: datetime) -> None:
+        metadata = event.get("metadata")
+        if not isinstance(metadata, dict):
+            return
+        sensor_id = metadata.get("sensor_id")
+        if not isinstance(sensor_id, str) or not sensor_id:
+            return
+
+        key = (actor, sensor_id)
+        previous = self._camera.get(key)
+        if previous is not None and previous["at"] > timestamp:
+            return  # out-of-order delivery must not rewind
+        record = {
+            "sensor_id": sensor_id,
+            "sensor_type": "camera",
+            "event": metadata.get("event"),
+            "at": timestamp,
+        }
+        # The device announces where its stream is when it comes online. Kept
+        # from the last announcement, so a camera that has since reported motion
+        # does not lose its URL.
+        url = metadata.get("url")
+        if isinstance(url, str) and url:
+            record["stream_url"] = url
+        elif previous is not None and previous.get("stream_url"):
+            record["stream_url"] = previous["stream_url"]
+        self._camera[key] = record
+
+    def camera_state(self, device_id: str, sensor_id: str) -> dict | None:
+        return self._camera.get((device_id, sensor_id))

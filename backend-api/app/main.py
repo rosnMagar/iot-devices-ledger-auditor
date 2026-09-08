@@ -233,7 +233,7 @@ async def devices(
 
 def _sensor_view(sensor: Sensor) -> dict:
     latest = ledger_activity.latest_reading(sensor.device_id, sensor.sensor_id)
-    return {
+    view = {
         "sensor_id": sensor.sensor_id,
         "sensor_type": sensor.sensor_type,
         # The unit the sensor is expected to report; the reading below carries
@@ -242,6 +242,13 @@ def _sensor_view(sensor: Sensor) -> dict:
         "registered": True,
         "latest": latest,
     }
+    # A camera reports events, not measurements. Its stream URL comes from the
+    # device's own stream_online announcement — the ledger never carries media
+    # (ADR 0011), only the address of it.
+    camera = ledger_activity.camera_state(sensor.device_id, sensor.sensor_id)
+    if camera is not None:
+        view["camera"] = camera
+    return view
 
 
 @app.get("/devices/{device_id}/sensors")

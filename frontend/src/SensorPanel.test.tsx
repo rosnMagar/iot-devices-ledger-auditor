@@ -91,15 +91,33 @@ describe('renderer selection', () => {
     expect(card('acc-0').getByTestId('series-chart')).toBeInTheDocument()
   })
 
-  it('tells the operator a camera has no live view yet', () => {
-    // IOT-75. Saying so beats an empty box.
+  it('renders a live view for a camera, not a chart', () => {
     panel([
       sensor({
         sensor_id: 'cam-0', sensor_type: 'camera', unit: 'stream',
-        latest: reading('cam-0', null, 'stream', 'camera'),
+        latest: null,
+        camera: {
+          sensor_id: 'cam-0', sensor_type: 'camera', event: 'stream_online',
+          stream_url: 'http://device.local:8090/stream', at: AT,
+        },
       }),
     ])
-    expect(card('cam-0').getByText(/live view not wired up/i)).toBeInTheDocument()
+    const body = card('cam-0')
+
+    expect(body.getByRole('img', { name: /live camera/i })).toBeInTheDocument()
+    expect(body.queryByTestId('series-chart')).not.toBeInTheDocument()
+  })
+
+  it('does not report a camera as having never sent anything', () => {
+    // A camera reports events, not readings, so `latest` is legitimately null.
+    // The generic "No readings yet" branch would be wrong here.
+    panel([
+      sensor({ sensor_id: 'cam-0', sensor_type: 'camera', unit: 'stream', latest: null }),
+    ])
+    const body = card('cam-0')
+
+    expect(body.queryByText(/no readings yet/i)).not.toBeInTheDocument()
+    expect(body.getByText(/has not announced a stream/i)).toBeInTheDocument()
   })
 
   it('falls back to the raw value for an unknown sensor type', () => {
