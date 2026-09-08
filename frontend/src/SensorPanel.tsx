@@ -2,6 +2,7 @@
 // Adding a type means adding a renderer here, not editing the panel — which is
 // how the camera pane (IOT-75) and the accelerometer 3D view (IOT-76) land.
 
+import CameraPane from './CameraPane'
 import Gauge from './Gauge'
 import SeriesChart from './SeriesChart'
 import { hasAnyValue, isEmpty, toSeries } from './chartData'
@@ -28,17 +29,26 @@ function latestScalar(latest: Reading | null): number | null {
   return typeof latest?.value === 'number' ? latest.value : null
 }
 
-function SensorBody({ sensor, readings }: { sensor: Sensor; readings: Reading[] }) {
+function SensorBody({
+  sensor,
+  readings,
+  now,
+}: {
+  sensor: Sensor
+  readings: Reading[]
+  now?: Date
+}) {
   const { sensor_type: type, latest } = sensor
+
+  // Checked before `latest`: a camera reports events, not readings, so it would
+  // otherwise be reported as having never sent anything.
+  if (type === 'camera') {
+    return <CameraPane camera={sensor.camera} now={now} />
+  }
 
   // Never reported at all — different from reporting and failing.
   if (latest === null) {
     return <p style={styles.note}>No readings yet.</p>
-  }
-
-  if (type === 'camera') {
-    // Live view is IOT-75. Saying so beats an empty box.
-    return <p style={styles.note}>Camera — live view not wired up yet.</p>
   }
 
   const unit = latest.unit ?? sensor.unit
@@ -119,7 +129,7 @@ export default function SensorPanel({
             </p>
           )}
 
-          <SensorBody sensor={sensor} readings={readings} />
+          <SensorBody sensor={sensor} readings={readings} now={now} />
         </section>
       ))}
     </aside>

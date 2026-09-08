@@ -168,3 +168,21 @@ Services:
 - `http://localhost:8080` — storage-core
 - `http://localhost:8000` — backend-api
 - `http://localhost` — frontend (port 80)
+
+## Simulated camera (dev tool)
+
+`backend-api/tools/fake_camera.py` stands in for a camera module, so the live
+view can be developed without hardware:
+
+```bash
+python3 backend-api/tools/fake_camera.py     # serves :8090/stream
+SIM_CAMERA_URL=http://localhost:8090/stream  # tell the simulator to announce it
+```
+
+It serves `multipart/x-mixed-replace`, the same shape an ESP32-CAM's MJPEG
+endpoint uses, so the frontend needs no special case for the fake. Frames are
+PNG rather than JPEG because the standard library can encode PNG and cannot
+encode JPEG; browsers render either in a multipart stream. A moving bar makes it
+obvious at a glance that the stream is live rather than a still.
+
+Nothing it serves is recorded, and none of it goes near the ledger (ADR 0011).

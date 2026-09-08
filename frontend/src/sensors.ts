@@ -12,6 +12,16 @@ export interface Reading {
   at: string
 }
 
+export interface CameraState {
+  sensor_id: string
+  sensor_type: 'camera'
+  event: string | null
+  // Announced by the device when its stream came online. The ledger records the
+  // address, never the media (ADR 0011).
+  stream_url?: string
+  at: string
+}
+
 export interface Sensor {
   sensor_id: string
   sensor_type: string | null
@@ -19,6 +29,7 @@ export interface Sensor {
   // false = the ledger reports it but nothing registered it — a firmware typo.
   registered: boolean
   latest: Reading | null
+  camera?: CameraState
 }
 
 export interface SensorsResponse {

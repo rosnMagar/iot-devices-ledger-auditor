@@ -18,8 +18,10 @@ NOW = datetime(2026, 9, 7, 12, 0, 0, tzinfo=timezone.utc)
 
 class FakeActivity:
     # Stands in for LedgerActivity; the derivation is covered in test_activity.py.
-    def __init__(self, latest: dict | None = None, reachable: bool = True) -> None:
+    def __init__(self, latest: dict | None = None, reachable: bool = True,
+                 cameras: dict | None = None) -> None:
         self._latest = latest or {}
+        self._cameras = cameras or {}
         self.reachable = reachable
 
     async def refresh(self, client=None) -> None:
@@ -36,6 +38,9 @@ class FakeActivity:
 
     def sensors_seen(self, device_id: str) -> set[str]:
         return {sid for (did, sid) in self._latest if did == device_id}
+
+    def camera_state(self, device_id: str, sensor_id: str):
+        return self._cameras.get((device_id, sensor_id))
 
 
 def reading(sensor_id: str, value, unit: str, stype: str = "temperature") -> dict:
