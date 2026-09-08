@@ -7,6 +7,8 @@ import { isFiltered } from './filters'
 import type { DeviceFilters } from './filters'
 import type { SortKey } from './query'
 import { toggleSort } from './query'
+import { statusFrom } from './blockStream'
+import { useBlockStream, useTicker } from './useBlockStream'
 import { useDevices, useFleetOptions } from './useDevices'
 import { useSensorPanel } from './useSensorPanel'
 import { useUrlQuery } from './useUrlQuery'
@@ -37,11 +39,55 @@ export default function App() {
   const { data, loading, error } = useDevices(API, query)
   const options = useFleetOptions(API)
   const panel = useSensorPanel(API, selectedId)
+  const stream = useBlockStream(API)
+  // Status decays with time, so something must re-render even when no block
+  // arrives — otherwise a quiet device stays "active" for ever.
+  const now = useTicker(5000)
 
   // Selects and header clicks are discrete events, so there is nothing to
   // debounce — one change is one request.
   const patchFilters = (patch: Partial<DeviceFilters>) => setQuery({ ...query, ...patch })
   const sortBy = (key: SortKey) => setQuery(toggleSort(query, key))
+
+  // Live values layered over the fetched rows. Positions are deliberately not
+  // re-sorted: the sort is server-side (IOT-39), and rows jumping under the
+  // cursor on every reading would be worse than a stale ordering. The next
+  // fetch reorders.
+  const devices = (data?.devices ?? []).map((device) => {
+    const streamed = stream.lastSeen[device.device_id]
+    const lastSeen =
+      streamed !== undefined && (device.last_seen === null || streamed > device.last_seen)
+        ? streamed
+        : device.last_seen
+    return {
+      ...device,
+      last_seen: lastSeen,
+      status: data ? statusFrom(lastSeen, data.active_window_seconds, now) : device.status,
+    }
+  })
+
+  // Readings that arrived over the socket for the selected device, appended to
+  // the backfill from /readings. De-duplicated on (sensor, seq, timestamp),
+  // because a reading can arrive on the socket that the backfill also returned.
+  const streamedForDevice = stream.readings.filter(
+    (r) => (r as { device_id?: string }).device_id === selectedId,
+  )
+  const seen = new Set(panel.readings.map((r) => `${r.sensor_id}|${r.seq}|${r.at}`))
+  const panelReadings = [
+    ...panel.readings,
+    ...streamedForDevice.filter((r) => !seen.has(`${r.sensor_id}|${r.seq}|${r.at}`)),
+  ]
+
+  // The gauge and the "Xs ago" label read `latest`, which came from the fetch.
+  // Without this the chart grows while the dial beside it stays frozen at the
+  // value it had when the device was selected.
+  const panelSensors = panel.sensors.map((sensor) => {
+    const newest = panelReadings.reduce<typeof sensor.latest>((best, reading) => {
+      if (reading.sensor_id !== sensor.sensor_id) return best
+      return best === null || reading.at > best.at ? reading : best
+    }, sensor.latest)
+    return newest === sensor.latest ? sensor : { ...sensor, latest: newest }
+  })
 
   if (!API) {
     return (
@@ -58,6 +104,14 @@ export default function App() {
       <h1>IoT Devices Ledger Auditor</h1>
 
       {error && <p style={{ color: 'red' }}>Error: {error}</p>}
+
+      {/* The socket being down is not an outage — everything still works from
+          the fetch — but a dashboard that has silently stopped updating while
+          looking live is worse than one that says so. */}
+      <p style={{ color: stream.connected ? '#2b7a3d' : '#888', fontSize: '0.85em' }}>
+        {stream.connected ? '● live' : '○ not live — showing the last fetch'}
+        {stream.dropped > 0 && ` · ${stream.dropped} blocks missed`}
+      </p>
 
       {/* Status is derived from the ledger; if it is unreachable the column is
           stale, and saying nothing would show a dead fleet as healthy. */}
@@ -95,7 +149,7 @@ export default function App() {
         <div style={tableColumn}>
           {data && (
             <DevicesTable
-              devices={data.devices}
+              devices={devices}
               sort={query.sort}
               order={query.order}
               onSort={sortBy}
@@ -112,9 +166,10 @@ export default function App() {
 
         {selectedId !== null && (
           <SensorPanel
+            now={now}
             deviceId={selectedId}
-            sensors={panel.sensors}
-            readings={panel.readings}
+            sensors={panelSensors}
+            readings={panelReadings}
             loading={panel.loading}
             error={panel.error}
           />
